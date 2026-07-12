@@ -1,0 +1,29 @@
+CREATE TABLE daily_ohlcv (
+    date   TEXT    NOT NULL PRIMARY KEY,
+    open   REAL    NOT NULL,
+    high   REAL    NOT NULL,
+    low    REAL    NOT NULL,
+    close  REAL    NOT NULL,
+    volume INTEGER NOT NULL
+);
+
+CREATE INDEX idx_daily_ohlcv_date ON daily_ohlcv(date);
+
+selectAll:
+SELECT *
+FROM daily_ohlcv
+ORDER BY date ASC;
+
+selectByDateRange:
+SELECT *
+FROM daily_ohlcv
+WHERE date >= :startDate AND date <= :endDate
+ORDER BY date ASC;
+
+insertOrReplace:
+INSERT OR REPLACE INTO daily_ohlcv(date, open, high, low, close, volume)
+VALUES (:date, :open, :high, :low, :close, :volume);
+
+deleteByDate:
+DELETE FROM daily_ohlcv
+WHERE date = :date;

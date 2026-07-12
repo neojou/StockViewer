@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.dokka)
+    alias(libs.plugins.sqldelight)
 }
 
 group = "com.neojou.stockviewer"
@@ -19,10 +20,15 @@ kotlin {
 
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
-        binaries.executable()
         outputModuleName.set("StockViewer")
         browser { }
         binaries.executable()
+    }
+
+    // Suppress Beta warning for expect/actual classes (DatabaseDriverFactory).
+    // See: https://youtrack.jetbrains.com/issue/KT-61573
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
     sourceSets {
@@ -38,11 +44,15 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.datetime)
 
+                // Ktor — core + plugins only in commonMain (engines go to platform source sets)
                 implementation(libs.ktor.client.core)
-                implementation(libs.ktor.client.cio)
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json)
                 implementation(libs.ktor.client.logging)
+
+                // SQLDelight — runtime in commonMain (drivers go to platform source sets)
+                implementation(libs.sqldelight.runtime)
+                implementation(libs.sqldelight.coroutines)
             }
         }
 
@@ -57,15 +67,31 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
+                // Ktor JVM engine
                 implementation(libs.ktor.client.cio)
+                // SQLDelight JVM driver (JdbcSqliteDriver)
+                implementation(libs.sqldelight.sqlite.driver)
             }
         }
         val wasmJsMain by getting {
             dependencies {
+                // Ktor JS/Wasm engine
                 implementation(libs.ktor.client.js)
+                // SQLDelight web worker driver (Phase 2 persistence; Phase 1 may stub driver)
+                implementation(libs.sqldelight.web.worker.driver)
             }
         }
 
+    }
+}
+
+// SQLDelight: type-safe SQLite API generated from .sq files under
+// src/commonMain/sqldelight/
+sqldelight {
+    databases {
+        create("StockViewerDatabase") {
+            packageName.set("com.neojou.stockviewer.database")
+        }
     }
 }
 
@@ -83,4 +109,3 @@ compose.desktop {
         mainClass = "com.neojou.stockviewer.MainKt"
     }
 }
-

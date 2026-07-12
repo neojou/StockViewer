@@ -180,15 +180,33 @@ OhlcvUiState 更新 → CandlestickChart 重繪
 - Repository 以 `Flow` 暴露資料變更，UI 自動刷新。
 - 在 `AppContainer` 初始化時建立 Database 與 Repository 單例。
 
-**Gradle 依賴（待加入 `libs.versions.toml`）：**
+**Gradle 依賴（已加入 `libs.versions.toml` / `composeApp/build.gradle.kts`）：**
 
 ```toml
-sqldelight = "2.0.2"
+sqldelight = "2.3.2"
+ktor = "3.3.0"
 
+# SQLDelight
 sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
 sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
 sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+sqldelight-web-worker-driver = { module = "app.cash.sqldelight:web-worker-driver", version.ref = "sqldelight" }
+
+# Ktor（common 放 core + plugins；平台 engine 放 desktopMain / wasmJsMain）
+ktor-client-core / content-negotiation / serialization-json / logging
+ktor-client-cio   # Desktop
+ktor-client-js    # WasmJS
 ```
+
+**SQLDelight 資料庫名稱**：`StockViewerDatabase`（package：`com.neojou.stockviewer.database`）
+
+**平台骨架（已建立）：**
+
+| 元件 | 路徑 |
+|------|------|
+| Schema | `commonMain/sqldelight/.../DailyOhlcv.sq` |
+| Driver factory | `platform/DatabaseDriverFactory`（expect/actual） |
+| Ktor factory | `network/HttpClientFactory`（expect/actual） |
 
 ### 2. K 線欄位輸入操作介面
 
@@ -294,6 +312,7 @@ interface OhlcvRepository {
 
 ## 相關文件
 
-- [SQLDelight KMP 文件](https://cashapp.github.io/sqldelight/2.0.2/multiplatform_sqlite/)
+- [Ktor + SQLDelight KMP 教學](https://kotlinlang.org/docs/multiplatform/multiplatform-ktor-sqldelight.html)
+- [SQLDelight KMP 文件](https://sqldelight.github.io/sqldelight/latest/multiplatform_sqlite/)
 - [Compose Multiplatform](https://www.jetbrains.com/compose-multiplatform/)
 - [kotlinx-datetime](https://github.com/Kotlin/kotlinx-datetime)
