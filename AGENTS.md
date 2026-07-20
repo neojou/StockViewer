@@ -96,7 +96,7 @@ DELETE FROM daily_ohlcv WHERE date = :date;
 composeApp/src/
 ├── commonMain/kotlin/com/neojou/stockviewer/
 │   ├── App.kt                          # 根 Composable，負責初始化
-│   ├── StockViewer.kt                  # → 重構為導向 StockViewerScreen
+│   ├── StockViewer.kt                  # 主殼層：Scaffold + AppToolbar + 內容區
 │   │
 │   ├── domain/                         # 領域層（純 Kotlin，無 Compose / DB 依賴）
 │   │   ├── model/
@@ -113,10 +113,12 @@ composeApp/src/
 │   │       └── OhlcvRepositoryImpl.kt  # SQLDelight 實作
 │   │
 │   ├── presentation/                   # 展示層
+│   │   ├── toolbar/
+│   │   │   └── AppToolbar.kt           # ✅ 頂部下拉選單（Database / K Chart）
 │   │   ├── OhlcvUiState.kt             # 畫面狀態（列表、表單、圖表範圍、錯誤）
 │   │   ├── OhlcvViewModel.kt           # 狀態管理 + 呼叫 Repository
 │   │   ├── screen/
-│   │   │   └── StockViewerScreen.kt      # 主畫面：表單 + 圖表 + 資料列表
+│   │   │   └── StockViewerScreen.kt    # 主畫面：表單 + 圖表 + 資料列表（待實作）
 │   │   ├── form/
 │   │   │   └── OhlcvInputForm.kt       # 新增/編輯 OHLCV 欄位表單
 │   │   ├── chart/
@@ -125,21 +127,29 @@ composeApp/src/
 │   │   └── list/
 │   │       └── OhlcvDataTable.kt       # 可選：表格檢視/刪除操作
 │   │
+│   ├── platform/                       # ✅ expect：DB Driver
+│   │   └── DatabaseDriverFactory.kt
+│   ├── network/                        # ✅ expect：Ktor HttpClient
+│   │   └── HttpClientFactory.kt
 │   └── di/                             # 依賴組裝（簡易 factory，不引入 DI 框架）
 │       └── AppContainer.kt
 │
-├── commonMain/sqldelight/              # SQLDelight schema（見上方）
+├── commonMain/sqldelight/              # ✅ SQLDelight schema
 │   └── com/neojou/stockviewer/database/
 │       └── DailyOhlcv.sq
 │
 ├── desktopMain/kotlin/com/neojou/stockviewer/
 │   ├── Main.kt
-│   └── platform/
-│       └── DatabaseDriverFactory.kt    # actual: JdbcSqliteDriver → 本機 .db 檔
+│   ├── platform/
+│   │   └── DatabaseDriverFactory.kt    # ✅ actual: JdbcSqliteDriver → ~/.stockviewer/spacex.db
+│   └── network/
+│       └── HttpClientFactory.desktop.kt  # ✅ actual: CIO engine
 │
 └── wasmJsMain/kotlin/com/neojou/stockviewer/
-    └── platform/
-        └── DatabaseDriverFactory.kt    # actual: InMemory 或 Phase 2 sql.js
+    ├── platform/
+    │   └── DatabaseDriverFactory.kt    # ✅ actual: Phase 1 stub（error）；Phase 2 WebWorker/sql.js
+    └── network/
+        └── HttpClientFactory.wasmJs.kt # ✅ actual: Js engine
 ```
 
 ### 模組職責
@@ -168,6 +178,33 @@ Flow<List<DailyOhlcv>> 回傳
     ↓
 OhlcvUiState 更新 → CandlestickChart 重繪
 ```
+
+### 頂部導覽 Toolbar（已實作）
+
+主殼層 `StockViewer` 使用 Material3 `Scaffold`，`topBar` 為 `AppToolbar`。
+
+**選單結構：**
+
+```
+[ Database ]  [ K Chart ]
+     ├─ Input      → 未來：OhlcvInputForm（資料輸入）
+     └─ View       → 未來：OhlcvDataTable（資料列表）
+  K Chart          → 未來：CandlestickChart（日 K 線圖）
+```
+
+| 元件 | 路徑 | 狀態 |
+|------|------|------|
+| `AppToolbar` | `presentation/toolbar/AppToolbar.kt` | ✅ 已實作 |
+| `DatabaseSubMenu` | `Input` / `View` | ✅ 列舉已定義 |
+| 選單 callback | `onDatabaseSubMenuClick` / `onKChartClick` | ✅ 介面就緒；**目前 no-op** |
+| 內容區導覽 | 依選單切換畫面 | ⏳ 待接 P1–P3 畫面 |
+
+**實作要點：**
+
+- 第一層：`Database`（`DropdownMenu`）、`K Chart`（`TextButton`，無子選單）
+- 第二層：`Database` 下展開 `Input`、`View`
+- 點擊僅 debug log（TAG：`AppToolbar`），不切換畫面、不觸發資料操作
+- 後續導覽：在 `StockViewer` 填入 callback，以 state 切換 `OhlcvInputForm` / 資料表 / K 線圖
 
 ---
 
@@ -266,14 +303,16 @@ interface OhlcvRepository {
 
 ## 實作順序（建議）
 
-| 階段 | 內容 | 產出 |
-|------|------|------|
-| **P0** | SQLDelight schema + Desktop Driver + Repository | 可 CRUD 的資料層 |
-| **P1** | OhlcvInputForm + ViewModel + 驗證 | 可輸入並持久化資料 |
-| **P2** | CandlestickChart（Canvas） | 可視化日 K 線 |
-| **P3** | OhlcvDataTable + 刪除/編輯 | 完整資料管理 |
-| **P4** | CSV 匯入/匯出（可選） | 批次資料操作 |
-| **P5** | Wasm 平台適配 | Web 版上線 |
+| 階段 | 內容 | 產出 | 狀態 |
+|------|------|------|------|
+| **P0a** | SQLDelight schema + Desktop/Wasm Driver skeleton + Ktor HttpClient | 可編譯的資料/網路骨架 | ✅ 完成 |
+| **P0b** | AppToolbar 頂部下拉選單（Database / K Chart） | 主殼層導覽 UI | ✅ 完成（動作 no-op） |
+| **P0** | Repository + Mapper + AppContainer | 可 CRUD 的資料層 | ⏳ 待做 |
+| **P1** | OhlcvInputForm + ViewModel + 驗證；接 `Database > Input` | 可輸入並持久化資料 | ⏳ 待做 |
+| **P2** | CandlestickChart（Canvas）；接 `K Chart` | 可視化日 K 線 | ⏳ 待做 |
+| **P3** | OhlcvDataTable + 刪除/編輯；接 `Database > View` | 完整資料管理 | ⏳ 待做 |
+| **P4** | CSV 匯入/匯出（可選） | 批次資料操作 | ⏳ 待做 |
+| **P5** | Wasm 平台適配（WebWorker/sql.js 等） | Web 版上線 | ⏳ 待做 |
 
 ---
 
@@ -305,8 +344,9 @@ interface OhlcvRepository {
 2. **新增功能時**先擴充 domain 介面，再實作 data，最後接 presentation。
 3. **不要**在 `commonMain` 引入 `java.*` 或平台專屬 API；平台差異放 `desktopMain` / `wasmJsMain`。
 4. **圖表變更**保持 Canvas 邏輯與資料模型解耦，`CandlestickChart` 只接收 `List<DailyOhlcv>`。
-5. **提交前**確認 Desktop 可編譯執行（`./gradlew :composeApp:run`）。
-6. 用戶要求「規劃」時更新本文件；要求「實作」時按 P0→P5 順序推進。
+5. **導覽變更**經由 `AppToolbar` callback 與 `StockViewer` 狀態切換；不要在 toolbar 內直接呼叫 Repository。
+6. **提交前**確認 Desktop 可編譯執行（`./gradlew :composeApp:run`）。
+7. 用戶要求「規劃」時更新本文件；要求「實作」時按 P0→P5 順序推進；**已驗證可行的 UI/設定變更應同步回寫本文件**。
 
 ---
 
