@@ -10,7 +10,6 @@ import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.tools.LogLevel
 import com.neojou.tools.MyLog
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -30,16 +29,16 @@ class OhlcvRepositoryImpl(
     override fun observeAll(): Flow<List<DailyOhlcv>> =
         queries.selectAll()
             .asFlow()
-            .mapToList(Dispatchers.IO)
+            .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { it.toDomain() } }
 
     override fun observeRange(start: LocalDate, end: LocalDate): Flow<List<DailyOhlcv>> =
         queries.selectByDateRange(start.toString(), end.toString())
             .asFlow()
-            .mapToList(Dispatchers.IO)
+            .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { it.toDomain() } }
 
-    override suspend fun upsert(entry: DailyOhlcv): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun upsert(entry: DailyOhlcv): Result<Unit> = withContext(Dispatchers.Default) {
         runCatching {
             queries.insertOrReplace(
                 date = entry.dateIso(),
@@ -53,7 +52,7 @@ class OhlcvRepositoryImpl(
         }
     }
 
-    override suspend fun delete(date: LocalDate): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun delete(date: LocalDate): Result<Unit> = withContext(Dispatchers.Default) {
         runCatching {
             queries.deleteByDate(date.toString())
             MyLog.add(TAG, "delete $date", LogLevel.DEBUG)

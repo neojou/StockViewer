@@ -61,3 +61,6 @@ out/
 # Android Studio serialized cache file (harmless to keep even for pure JVM)
 .idea/caches/build_file_checksums.ser
 
+#Grok
+mygroknote
+
