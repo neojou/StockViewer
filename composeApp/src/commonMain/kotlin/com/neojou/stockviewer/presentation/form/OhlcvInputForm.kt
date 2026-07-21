@@ -97,7 +97,7 @@ fun OhlcvInputDialog(
         onDismissRequest = {
             if (!isSaving) onDismiss()
         },
-        title = { Text("輸入 OHLCV") },
+        title = { Text("輸入 當日Ｋ線 資料") },
         text = {
             Column(
                 modifier = Modifier
