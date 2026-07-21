@@ -1,21 +1,18 @@
 package com.neojou.stockviewer.presentation.list
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.neojou.stockviewer.domain.model.DailyOhlcv
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
@@ -43,15 +41,17 @@ import kotlin.math.round
 private const val TAG = "OhlcvDataTable"
 private const val DEFAULT_LIMIT = 100
 
-private val ColDate = 110.dp
-private val ColPrice = 88.dp
-private val ColVolume = 100.dp
+// Relative column weights so all 6 fields stay visible inside the dialog.
+private const val W_DATE = 1.35f
+private const val W_PRICE = 1f
+private const val W_VOLUME = 1.15f
 
 /**
  * Popup scroll window listing OHLCV rows from the database.
  *
- * - Header row with column labels
+ * - Header row with column labels (日期 / 開 / 高 / 低 / 收 / 量)
  * - Up to [limit] most recent rows, ordered by date descending (newest first)
+ * - Columns use [weight] so 收盤 and 成交量 are not clipped off-screen
  */
 @Composable
 fun OhlcvDataTableDialog(
@@ -78,8 +78,6 @@ fun OhlcvDataTableDialog(
         isLoading = false
     }
 
-    val hScroll = rememberScrollState()
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -88,7 +86,8 @@ fun OhlcvDataTableDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 420.dp, max = 720.dp)
+                    .widthIn(min = 520.dp, max = 760.dp)
+                    .fillMaxWidth()
                     .heightIn(min = 200.dp, max = 480.dp),
             ) {
                 Text(
@@ -96,7 +95,7 @@ fun OhlcvDataTableDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 when {
                     isLoading -> {
@@ -111,7 +110,7 @@ fun OhlcvDataTableDialog(
                     }
                     errorMessage != null -> {
                         Text(
-                            text = errorMessage!!,
+                            text = errorMessage.orEmpty(),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -131,18 +130,14 @@ fun OhlcvDataTableDialog(
                         }
                     }
                     else -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(hScroll),
-                        ) {
-                            // Header row
+                        // Full-width table: weight columns keep 收/量 visible (no clipped fixed widths).
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             OhlcvTableHeaderRow()
                             HorizontalDivider()
                             LazyColumn(
                                 modifier = Modifier
-                                    .heightIn(max = 400.dp)
-                                    .fillMaxWidth(),
+                                    .fillMaxWidth()
+                                    .heightIn(max = 400.dp),
                             ) {
                                 itemsIndexed(
                                     items = rows,
@@ -155,7 +150,7 @@ fun OhlcvDataTableDialog(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "共 ${rows.size} 筆",
                             style = MaterialTheme.typography.labelSmall,
@@ -177,16 +172,17 @@ fun OhlcvDataTableDialog(
 private fun OhlcvTableHeaderRow() {
     Row(
         modifier = Modifier
+            .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(vertical = 8.dp, horizontal = 4.dp),
-        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderCell("日期", ColDate)
-        HeaderCell("開盤", ColPrice)
-        HeaderCell("最高", ColPrice)
-        HeaderCell("最低", ColPrice)
-        HeaderCell("收盤", ColPrice)
-        HeaderCell("成交量", ColVolume)
+        HeaderCell(text = "日期", weight = W_DATE)
+        HeaderCell(text = "開盤", weight = W_PRICE)
+        HeaderCell(text = "最高", weight = W_PRICE)
+        HeaderCell(text = "最低", weight = W_PRICE)
+        HeaderCell(text = "收盤", weight = W_PRICE)
+        HeaderCell(text = "成交量", weight = W_VOLUME)
     }
 }
 
@@ -199,38 +195,43 @@ private fun OhlcvTableDataRow(entry: DailyOhlcv, striped: Boolean) {
     }
     Row(
         modifier = Modifier
+            .fillMaxWidth()
             .background(bg)
             .padding(vertical = 6.dp, horizontal = 4.dp),
-        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        DataCell(entry.date.toString(), ColDate, alignStart = true)
-        DataCell(formatPrice(entry.open), ColPrice)
-        DataCell(formatPrice(entry.high), ColPrice)
-        DataCell(formatPrice(entry.low), ColPrice)
-        DataCell(formatPrice(entry.close), ColPrice)
-        DataCell(entry.volume.toString(), ColVolume)
+        DataCell(text = entry.date.toString(), weight = W_DATE, alignStart = true)
+        DataCell(text = formatPrice(entry.open), weight = W_PRICE)
+        DataCell(text = formatPrice(entry.high), weight = W_PRICE)
+        DataCell(text = formatPrice(entry.low), weight = W_PRICE)
+        DataCell(text = formatPrice(entry.close), weight = W_PRICE)
+        DataCell(text = entry.volume.toString(), weight = W_VOLUME)
     }
 }
 
 @Composable
-private fun HeaderCell(text: String, width: androidx.compose.ui.unit.Dp) {
+private fun RowScope.HeaderCell(text: String, weight: Float) {
     Text(
         text = text,
-        modifier = Modifier.width(width),
+        modifier = Modifier.weight(weight),
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
 @Composable
-private fun DataCell(text: String, width: androidx.compose.ui.unit.Dp, alignStart: Boolean = false) {
+private fun RowScope.DataCell(text: String, weight: Float, alignStart: Boolean = false) {
     Text(
         text = text,
-        modifier = Modifier.width(width),
+        modifier = Modifier.weight(weight),
         style = MaterialTheme.typography.bodySmall,
         fontFamily = FontFamily.Monospace,
         textAlign = if (alignStart) TextAlign.Start else TextAlign.End,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -243,7 +244,6 @@ private fun formatPrice(value: Double): String {
     return if (scaled == asLong.toDouble()) {
         asLong.toString()
     } else {
-        // Trim trailing zeros without java.text (commonMain-safe)
         val raw = scaled.toString()
         if (raw.contains('.')) raw.trimEnd('0').trimEnd('.') else raw
     }
