@@ -2,20 +2,25 @@ package com.neojou.stockviewer.presentation.chart
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +39,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.neojou.stockviewer.domain.model.DailyOhlcv
@@ -139,66 +145,144 @@ fun CandlestickChart(
     }
 }
 
+/**
+ * Selected-day OHLCV header as a 2×3 grid (matches prior field order):
+ * ```
+ * | 日期     | 開  xxx | 低  xxx |
+ * | 量  xxx  | 高  xxx | 收  xxx |
+ * ```
+ * Column 2 labels (開/高) and column 3 labels (低/收) share a fixed label
+ * width so they line up vertically.
+ */
 @Composable
 private fun ChartHeader(entry: DailyOhlcv) {
     val accent = if (entry.isUp()) ChartColors.Up else ChartColors.Down
+    val grid = ChartColors.Grid
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .border(width = 1.dp, color = grid),
     ) {
+        // Row 1: 日期 | 開 | 低
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HeaderLabel(text = formatChartDate(entry.date), color = ChartColors.HeaderText, bold = true)
-            HeaderPair(label = "開", value = formatPrice(entry.open), valueColor = accent)
-            HeaderPair(label = "低", value = formatPrice(entry.low), valueColor = accent)
+            HeaderGridCell {
+                HeaderDateContent(text = formatChartDate(entry.date))
+            }
+            HeaderVLine(color = grid)
+            HeaderGridCell {
+                HeaderFieldContent(label = "開", value = formatPrice(entry.open), valueColor = accent)
+            }
+            HeaderVLine(color = grid)
+            HeaderGridCell {
+                HeaderFieldContent(label = "低", value = formatPrice(entry.low), valueColor = accent)
+            }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        HorizontalDivider(thickness = 1.dp, color = grid)
+        // Row 2: 量 | 高 | 收
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HeaderPair(label = "量", value = formatVolume(entry.volume), valueColor = ChartColors.HeaderText)
-            HeaderPair(label = "高", value = formatPrice(entry.high), valueColor = accent)
-            HeaderPair(label = "收", value = formatPrice(entry.close), valueColor = accent)
+            HeaderGridCell {
+                HeaderFieldContent(
+                    label = "量",
+                    value = formatVolume(entry.volume),
+                    valueColor = ChartColors.HeaderText,
+                )
+            }
+            HeaderVLine(color = grid)
+            HeaderGridCell {
+                HeaderFieldContent(label = "高", value = formatPrice(entry.high), valueColor = accent)
+            }
+            HeaderVLine(color = grid)
+            HeaderGridCell {
+                HeaderFieldContent(label = "收", value = formatPrice(entry.close), valueColor = accent)
+            }
         }
     }
 }
 
 @Composable
-private fun HeaderPair(label: String, value: String, valueColor: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun RowScope.HeaderGridCell(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun HeaderVLine(color: Color) {
+    VerticalDivider(
+        modifier = Modifier.fillMaxHeight(),
+        thickness = 1.dp,
+        color = color,
+    )
+}
+
+@Composable
+private fun HeaderDateContent(text: String) {
+    Text(
+        text = text,
+        color = ChartColors.HeaderText,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+    )
+}
+
+/**
+ * Label + value. [LABEL_WIDTH] is shared so 開/高 and 低/收 align across rows
+ * within the same column.
+ */
+@Composable
+private fun HeaderFieldContent(
+    label: String,
+    value: String,
+    valueColor: Color,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             text = label,
+            modifier = Modifier.width(LABEL_WIDTH),
             color = ChartColors.AxisText,
             style = MaterialTheme.typography.labelMedium,
+            textAlign = TextAlign.Start,
+            maxLines = 1,
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = value,
+            modifier = Modifier.weight(1f),
             color = valueColor,
             style = MaterialTheme.typography.bodyMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.End,
+            maxLines = 1,
         )
     }
 }
 
-@Composable
-private fun HeaderLabel(text: String, color: Color, bold: Boolean = false) {
-    Text(
-        text = text,
-        color = color,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
-        fontFamily = FontFamily.Monospace,
-    )
-}
+/** Fixed label column width so 開↔高 and 低↔收 line up. */
+private val LABEL_WIDTH = 18.dp
 
 @Composable
 private fun CandlestickCanvas(
