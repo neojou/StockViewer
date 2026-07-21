@@ -285,10 +285,11 @@ ktor-client-js    # WasmJS
 
 | 規則 | 說明 |
 |------|------|
-| 呈現 | Popup + 垂直/水平可捲動表格 |
+| 呈現 | Popup + 垂直可捲動表格（`LazyColumn`） |
 | 筆數 | 最多 **100** 筆（`getRecent(100)`） |
 | 排序 | **日期由近到遠**（`date DESC`，最近日期在第一資料列） |
-| 表頭 | 日期、開盤、最高、最低、收盤、成交量 |
+| 表頭／欄位 | **日期、開盤、最高、最低、收盤、成交量**（六欄皆須可見） |
+| 欄寬 | 使用 `Row` + `Modifier.weight` 均分 dialog 寬度；**勿**用固定 dp 寬度以免裁切「收盤／成交量」 |
 | 空資料 | 提示先用 Database → Input 新增 |
 | 關閉 | 底部「關閉」 |
 
@@ -301,18 +302,77 @@ ktor-client-js    # WasmJS
 | 筆數 | 最近 **30** 天（`observeAll` → `sortedBy date` → `takeLast(30)`） |
 | 橫軸方向 | **左舊右新**；最右 = 最接近今天 |
 | 預設選取 | **最右側**那一根 |
-| 點擊 | 點價量圖上某日 → 上方 header 改顯示該日 OHLCV；十字線高亮 |
-| 上方 header | 日期、量、開、高、低、收 |
+| 點擊 | 點價量圖上某日 → 上方 header 改顯示該日 OHLCV；十字線更新 |
 | 中間 | Canvas 蠟燭：實體（open–close）+ 影線（high–low） |
 | 下方 | 成交量柱（與當日漲跌同色） |
 | 配色 | **紅漲綠跌**（`close >= open` → 紅；否則綠；東亞慣例，對齊參考圖） |
 | 資料刷新 | 訂閱 `observeAll()`；Input 儲存後圖表自動更新 |
 | 空資料 | Empty State 提示先 Input |
 
+#### 4.1 上方選取日資訊（2×3 格線表）
+
+欄位次序與參考圖一致，為 **2 列 × 3 欄** 表格，並畫格線（外框 + 水平/垂直 `Divider`）：
+
+```
+| 日期       | 開  xxx  | 低  xxx  |
+| 量  xxx    | 高  xxx  | 收  xxx  |
+```
+
+- 三欄等寬（`weight(1f)`）
+- 標籤固定寬度 `LABEL_WIDTH`，使 **開 與 高**、**低 與 收** 垂直對齊
+- 開/高/低/收數值依漲跌顯示紅/綠；日期與量用中性色
+
+#### 4.2 左側價格刻度
+
+| 邊界 | 規則 |
+|------|------|
+| **上界** | 第一個 **嚴格大於** 資料最高價（`max(high)`）的 nice 刻度 |
+| **下界** | 第一個 **嚴格小於** 資料最低價（`min(low)`）的 nice 刻度 |
+| **中間** | 同一 `priceStep` 均勻標示（`ChartLayout.priceTicks()`） |
+
+- Y 軸範圍 = `[下界刻度, 上界刻度]`（`priceMin` / `priceMax`）
+- 勿在上界再多加一格 step（先前錯誤行為已修正）
+
+#### 4.3 價格區 / 成交量區版面（不可重疊）
+
+垂直結構（由上到下）：
+
+```
+┌─ 價格 K 線 pane ─────────────────┐
+│  pricePlot（含左右刻度；內距避免  │
+│  最下刻度文字溢出）               │
+├──── 分隔帶 separatorHeight ───────┤  ← 深色帶 + 中央亮線 + 上下邊線
+│  成交量 caption（「成交量 n」）    │
+│  volumePlot（柱狀圖）             │
+└──────────────────────────────────┘
+     日期軸標籤
+```
+
+| 參數（`ChartLayout`） | 用途 |
+|----------------------|------|
+| `priceLabelInset` | 價格 plot 上下內距，刻度文字不壓到分隔帶 |
+| `separatorHeight` | 價／量之間明顯分隔（約 32px） |
+| `volumeCaptionHeight` | 成交量標題列，柱狀圖畫在其下 |
+| `volumePaneRatio` | 成交量 pane 佔剩餘高度比例（約 0.26） |
+
+- 蠟燭座標用 `pricePlotTop` / `pricePlotBottom`
+- 量柱座標用 `volumePlotTop` / `volumePlotBottom`
+
+#### 4.4 選取日十字線（Crosshair）
+
+點選某日（或預設最右日）時繪製：
+
+| 線段 | 位置 |
+|------|------|
+| **垂直** | 該日 slot 中心 X；價格 plot 與成交量 plot 各一段（對應價與量） |
+| **水平** | 該日 **收盤價** Y；左右拉滿 Canvas 寬度（對齊左側價格刻度） |
+
+兩線交會於當日收盤價，形成十字線。顏色：`ChartColors.Crosshair`。
+
 **檔案：**
 
-- `presentation/chart/ChartLayout.kt`：pane 幾何、Y 軸 ticks、`formatPrice` / `formatVolume`、顏色常數
-- `presentation/chart/CandlestickChart.kt`：header + Canvas 繪製 + `pointerInput` 點選
+- `presentation/chart/ChartLayout.kt`：pane 幾何、分隔帶、Y 軸 ticks / step、`formatPrice` / `formatVolume`、顏色常數
+- `presentation/chart/CandlestickChart.kt`：2×3 header、Canvas 蠟燭／量、十字線、`pointerInput` 點選
 
 **Phase 2（尚未做）：** 水平捲動 / 縮放、更多技術指標。
 
@@ -354,7 +414,9 @@ interface OhlcvRepository {
 | **P0** | Repository + Mapper + AppContainer + Validator | 可 CRUD 的資料層 | ✅ |
 | **P1** | `OhlcvInputDialog`；接 `Database > Input` | 單筆輸入並持久化 | ✅ |
 | **P2** | `CandlestickChart`；接 `K Chart` | 最近 30 日 K 線 + 點選 | ✅ |
+| **P2b** | K Chart UX：2×3 header、刻度上下界、價量分隔、收盤價十字線 | 可讀的價量圖 | ✅ |
 | **P3a** | `OhlcvDataTableDialog`；接 `Database > View` | 最近 100 筆表格檢視 | ✅ |
+| **P3a-fix** | View 六欄 `weight` 均分，避免收盤／成交量被裁切 | 六欄皆可見 | ✅ |
 | **P3b** | 表格內刪除/編輯、欄位級 UX 強化 | 完整資料管理 | ⏳ 待做 |
 | **P4** | CSV 匯入/匯出（可選） | 批次資料操作 | ⏳ 待做 |
 | **P5** | Wasm 平台適配（WebWorker/sql.js 等） | Web 版上線 | ⏳ 待做 |
@@ -393,8 +455,10 @@ interface OhlcvRepository {
 4. **圖表變更**保持 Canvas 與領域模型解耦；資料來自 `List<DailyOhlcv>` / Repository Flow。
 5. **導覽變更**經由 `AppToolbar` callback 與 `StockViewer` 狀態切換；不要在 toolbar 內直接呼叫 Repository。
 6. **K 線配色**維持紅漲綠跌（與 `docs/k_chart.jpg` 一致），除非產品明確要求改西式綠漲紅跌。
-7. **提交前**確認 Desktop 可編譯執行（`./gradlew :composeApp:run`）。
-8. 用戶要求「規劃」時更新本文件；要求「實作」時推進待辦階段；**已驗證可行的變更應同步回寫本文件**。
+7. **K Chart 刻度／版面**依 §4.2–4.4：上下界 nice 刻度、價量分隔、十字線（垂直 + 收盤價水平）；改 layout 時避免刻度與成交量重疊。
+8. **View 表格**六欄皆須可見；欄寬用 `weight`，勿固定寬度裁切右側欄。
+9. **提交前**確認 Desktop 可編譯執行（`./gradlew :composeApp:run`）。
+10. 用戶要求「規劃」時更新本文件；要求「實作」時推進待辦階段；**已驗證可行的變更應同步回寫本文件**。
 
 ---
 

@@ -318,8 +318,8 @@ private fun CandlestickCanvas(
             data = data,
         )
 
-        // Price horizontal grid + labels
-        val priceTicks = niceTicks(layout.priceMin, layout.priceMax, targetCount = 7)
+        // Price horizontal grid + labels (mapped into pricePlot* so labels stay in pane)
+        val priceTicks = layout.priceTicks()
         for (tick in priceTicks) {
             val y = layout.priceToY(tick)
             drawLine(
@@ -330,20 +330,48 @@ private fun CandlestickCanvas(
             )
             val label = formatPrice(tick)
             val measured = textMeasurer.measure(label, labelStyle)
+            val labelY = (y - measured.size.height / 2f)
+                .coerceIn(layout.priceTop, layout.priceBottom - measured.size.height)
             drawText(
                 textLayoutResult = measured,
                 topLeft = Offset(
                     x = (layout.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
-                    y = y - measured.size.height / 2f,
+                    y = labelY,
                 ),
             )
         }
 
-        // Volume horizontal grid + labels
-        val volSteps = 4
+        // Clear separator between price K-line pane and volume pane
+        drawRect(
+            color = Color(0xFF141414),
+            topLeft = Offset(0f, layout.priceBottom),
+            size = Size(size.width, layout.separatorHeight),
+        )
+        drawLine(
+            color = ChartColors.HeaderText.copy(alpha = 0.35f),
+            start = Offset(layout.chartLeft, layout.separatorY),
+            end = Offset(layout.chartRight, layout.separatorY),
+            strokeWidth = 1.5f,
+        )
+        // Thin edges of the separator band for a clearer split
+        drawLine(
+            color = ChartColors.Grid,
+            start = Offset(layout.chartLeft, layout.priceBottom),
+            end = Offset(layout.chartRight, layout.priceBottom),
+            strokeWidth = 1f,
+        )
+        drawLine(
+            color = ChartColors.Grid,
+            start = Offset(layout.chartLeft, layout.volumeTop),
+            end = Offset(layout.chartRight, layout.volumeTop),
+            strokeWidth = 1f,
+        )
+
+        // Volume horizontal grid + labels (inside volume plot area only)
+        val volSteps = 3
         for (i in 0..volSteps) {
             val ratio = i.toFloat() / volSteps
-            val y = layout.volumeBottom - ratio * layout.volumeHeight
+            val y = layout.volumePlotBottom - ratio * layout.volumePlotHeight
             drawLine(
                 color = ChartColors.Grid,
                 start = Offset(layout.chartLeft, y),
@@ -354,11 +382,13 @@ private fun CandlestickCanvas(
                 val vol = (layout.volumeMax * ratio).toLong()
                 val label = formatVolume(vol)
                 val measured = textMeasurer.measure(label, labelStyle)
+                val labelY = (y - measured.size.height / 2f)
+                    .coerceIn(layout.volumePlotTop, layout.volumePlotBottom - measured.size.height)
                 drawText(
                     textLayoutResult = measured,
                     topLeft = Offset(
                         x = (layout.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
-                        y = y - measured.size.height / 2f,
+                        y = labelY,
                     ),
                 )
             }
@@ -390,26 +420,43 @@ private fun CandlestickCanvas(
                 size = Size(bodyWidth, bodyH),
             )
 
-            val volH = layout.volumeToHeight(bar.volume)
+            val volTop = layout.volumeBarTop(bar.volume)
+            val volH = layout.volumePlotBottom - volTop
             drawRect(
                 color = color,
-                topLeft = Offset(cx - bodyWidth / 2f, layout.volumeBottom - volH),
-                size = Size(bodyWidth, volH),
+                topLeft = Offset(cx - bodyWidth / 2f, volTop),
+                size = Size(bodyWidth, volH.coerceAtLeast(1f)),
             )
         }
 
-        // Selected day crosshair + outline
+        // Selected day crosshair (vertical through price + volume; horizontal at close) + outline
         if (selectedIndex in data.indices) {
-            val cx = layout.slotCenterX(selectedIndex)
-            drawLine(
-                color = ChartColors.Crosshair,
-                start = Offset(cx, layout.priceTop),
-                end = Offset(cx, layout.volumeBottom),
-                strokeWidth = 1f,
-            )
             val bar = data[selectedIndex]
+            val cx = layout.slotCenterX(selectedIndex)
             val openY = layout.priceToY(bar.open)
             val closeY = layout.priceToY(bar.close)
+
+            // Vertical: day slot (price pane + volume pane)
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(cx, layout.pricePlotTop),
+                end = Offset(cx, layout.pricePlotBottom),
+                strokeWidth = 1f,
+            )
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(cx, layout.volumePlotTop),
+                end = Offset(cx, layout.volumePlotBottom),
+                strokeWidth = 1f,
+            )
+            // Horizontal: selected day's close — full width to read against left price scale
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(0f, closeY),
+                end = Offset(size.width, closeY),
+                strokeWidth = 1f,
+            )
+
             val top = minOf(openY, closeY)
             val bottom = maxOf(openY, closeY)
             val bodyH = (bottom - top).coerceAtLeast(1.5f)
@@ -439,7 +486,7 @@ private fun CandlestickCanvas(
             }
         }
 
-        // Selected volume caption (like reference image)
+        // Selected volume caption sits in the dedicated caption strip (above volume bars)
         val selected = data.getOrNull(selectedIndex)
         if (selected != null) {
             val title = "成交量 ${selected.volume}"
@@ -449,7 +496,12 @@ private fun CandlestickCanvas(
             )
             drawText(
                 textLayoutResult = measured,
-                topLeft = Offset(layout.chartLeft + 4f, layout.volumeTop + 2f),
+                topLeft = Offset(
+                    x = layout.chartLeft + 4f,
+                    y = layout.volumeTop +
+                        ((layout.volumeCaptionHeight - measured.size.height) / 2f)
+                            .coerceAtLeast(0f),
+                ),
             )
         }
     }
