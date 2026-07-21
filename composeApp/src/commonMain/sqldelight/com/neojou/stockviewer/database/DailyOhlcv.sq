@@ -20,6 +20,13 @@ FROM daily_ohlcv
 WHERE date >= :startDate AND date <= :endDate
 ORDER BY date ASC;
 
+-- Most recent rows first (closest calendar dates to "now" when data is historical).
+selectRecent:
+SELECT *
+FROM daily_ohlcv
+ORDER BY date DESC
+LIMIT :limit;
+
 insertOrReplace:
 INSERT OR REPLACE INTO daily_ohlcv(date, open, high, low, close, volume)
 VALUES (:date, :open, :high, :low, :close, :volume);

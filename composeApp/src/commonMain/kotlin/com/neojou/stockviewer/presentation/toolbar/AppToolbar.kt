@@ -27,7 +27,7 @@ private const val TAG = "AppToolbar"
  * Second-level items under the Database menu.
  *
  * - [Input] → opens OHLCV input dialog (wired in [com.neojou.stockviewer.StockViewer])
- * - [View] → reserved for data table (P3)
+ * - [View] → opens OHLCV data table dialog (recent 100 rows)
  */
 enum class DatabaseSubMenu {
     Input,
@@ -41,7 +41,7 @@ enum class DatabaseSubMenu {
  * ```
  * [ Database ▾ ]  [ K Chart ]
  *      ├─ Input   → OhlcvInputDialog
- *      └─ View    → (P3)
+ *      └─ View    → OhlcvDataTableDialog
  * ```
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,7 +80,7 @@ fun AppToolbar(
                             text = { Text("View") },
                             onClick = {
                                 databaseMenuExpanded = false
-                                MyLog.add(TAG, "Database > View (no-op)", LogLevel.DEBUG)
+                                MyLog.add(TAG, "Database > View", LogLevel.DEBUG)
                                 onDatabaseSubMenuClick(DatabaseSubMenu.View)
                             },
                         )

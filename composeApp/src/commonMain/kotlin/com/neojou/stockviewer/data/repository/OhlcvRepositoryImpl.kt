@@ -38,6 +38,16 @@ class OhlcvRepositoryImpl(
             .mapToList(Dispatchers.Default)
             .map { rows -> rows.map { it.toDomain() } }
 
+    override suspend fun getRecent(limit: Int): Result<List<DailyOhlcv>> =
+        withContext(Dispatchers.Default) {
+            runCatching {
+                queries.selectRecent(limit.toLong())
+                    .executeAsList()
+                    .map { it.toDomain() }
+                    .also { MyLog.add(TAG, "getRecent limit=$limit count=${it.size}", LogLevel.DEBUG) }
+            }
+        }
+
     override suspend fun upsert(entry: DailyOhlcv): Result<Unit> = withContext(Dispatchers.Default) {
         runCatching {
             queries.insertOrReplace(

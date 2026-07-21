@@ -12,6 +12,13 @@ import kotlinx.datetime.LocalDate
 interface OhlcvRepository {
     fun observeAll(): Flow<List<DailyOhlcv>>
     fun observeRange(start: LocalDate, end: LocalDate): Flow<List<DailyOhlcv>>
+
+    /**
+     * One-shot load of the most recent rows, ordered by date descending
+     * (newest / closest to today first). Default limit is 100.
+     */
+    suspend fun getRecent(limit: Int = 100): Result<List<DailyOhlcv>>
+
     suspend fun upsert(entry: DailyOhlcv): Result<Unit>
     suspend fun delete(date: LocalDate): Result<Unit>
 }

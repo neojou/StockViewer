@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import com.neojou.stockviewer.di.AppContainer
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.stockviewer.presentation.form.OhlcvInputDialog
+import com.neojou.stockviewer.presentation.list.OhlcvDataTableDialog
 import com.neojou.stockviewer.presentation.toolbar.AppToolbar
 import com.neojou.stockviewer.presentation.toolbar.DatabaseSubMenu
 import com.neojou.tools.LogLevel
@@ -34,15 +35,28 @@ private const val TAG = "StockViewer"
 /**
  * Primary application shell.
  *
- * Hosts the top [AppToolbar] and content area. Database → Input opens [OhlcvInputDialog].
+ * Hosts the top [AppToolbar] and content area.
+ * - Database → Input opens [OhlcvInputDialog]
+ * - Database → View opens [OhlcvDataTableDialog]
  */
 @Composable
 fun StockViewer() {
     var showInputDialog by remember { mutableStateOf(false) }
+    var showViewDialog by remember { mutableStateOf(false) }
     var repository by remember { mutableStateOf<OhlcvRepository?>(null) }
     var repositoryError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    fun requireRepository(onReady: () -> Unit) {
+        if (repository != null) {
+            onReady()
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(repositoryError ?: "資料庫尚未就緒")
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         MyLog.add(TAG, "Enter", LogLevel.DEBUG)
@@ -59,20 +73,8 @@ fun StockViewer() {
             AppToolbar(
                 onDatabaseSubMenuClick = { menu ->
                     when (menu) {
-                        DatabaseSubMenu.Input -> {
-                            if (repository != null) {
-                                showInputDialog = true
-                            } else {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        repositoryError ?: "資料庫尚未就緒",
-                                    )
-                                }
-                            }
-                        }
-                        DatabaseSubMenu.View -> {
-                            // Reserved for P3 data table
-                        }
+                        DatabaseSubMenu.Input -> requireRepository { showInputDialog = true }
+                        DatabaseSubMenu.View -> requireRepository { showViewDialog = true }
                     }
                 },
                 onKChartClick = {
@@ -105,6 +107,12 @@ fun StockViewer() {
                     snackbarHostState.showSnackbar("已儲存 ${entry.date}")
                 }
             },
+        )
+    }
+    if (showViewDialog && repo != null) {
+        OhlcvDataTableDialog(
+            repository = repo,
+            onDismiss = { showViewDialog = false },
         )
     }
 }
