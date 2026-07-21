@@ -87,10 +87,10 @@ fun AppToolbar(
                     }
                 }
 
-                // Level 1: K Chart (no submenu yet)
+                // Level 1: K Chart → main content candlestick view
                 TextButton(
                     onClick = {
-                        MyLog.add(TAG, "K Chart (no-op)", LogLevel.DEBUG)
+                        MyLog.add(TAG, "K Chart", LogLevel.DEBUG)
                         onKChartClick()
                     },
                     modifier = Modifier.padding(start = 4.dp),

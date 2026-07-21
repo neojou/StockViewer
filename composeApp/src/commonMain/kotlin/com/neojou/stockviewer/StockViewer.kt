@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.neojou.stockviewer.di.AppContainer
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
+import com.neojou.stockviewer.presentation.chart.CandlestickChart
 import com.neojou.stockviewer.presentation.form.OhlcvInputDialog
 import com.neojou.stockviewer.presentation.list.OhlcvDataTableDialog
 import com.neojou.stockviewer.presentation.toolbar.AppToolbar
@@ -33,16 +34,29 @@ import kotlinx.coroutines.launch
 private const val TAG = "StockViewer"
 
 /**
+ * Main content modes for the shell area below the toolbar.
+ */
+private enum class MainContent {
+    /** Default placeholder until a feature is chosen. */
+    Home,
+
+    /** Daily candlestick + volume chart (recent 30 days). */
+    KChart,
+}
+
+/**
  * Primary application shell.
  *
  * Hosts the top [AppToolbar] and content area.
  * - Database → Input opens [OhlcvInputDialog]
  * - Database → View opens [OhlcvDataTableDialog]
+ * - K Chart shows [CandlestickChart] in the main content area
  */
 @Composable
 fun StockViewer() {
     var showInputDialog by remember { mutableStateOf(false) }
     var showViewDialog by remember { mutableStateOf(false) }
+    var mainContent by remember { mutableStateOf(MainContent.Home) }
     var repository by remember { mutableStateOf<OhlcvRepository?>(null) }
     var repositoryError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -78,7 +92,10 @@ fun StockViewer() {
                     }
                 },
                 onKChartClick = {
-                    // Reserved for P2 chart
+                    requireRepository {
+                        mainContent = MainContent.KChart
+                        MyLog.add(TAG, "Show K Chart", LogLevel.DEBUG)
+                    }
                 },
             )
         },
@@ -88,12 +105,39 @@ fun StockViewer() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "Stock Viewer",
-                style = MaterialTheme.typography.headlineMedium,
-            )
+            val repo = repository
+            when (mainContent) {
+                MainContent.Home -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "Stock Viewer",
+                            style = MaterialTheme.typography.headlineMedium,
+                        )
+                    }
+                }
+                MainContent.KChart -> {
+                    if (repo != null) {
+                        CandlestickChart(
+                            repository = repo,
+                            chartModifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = repositoryError ?: "資料庫尚未就緒",
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
