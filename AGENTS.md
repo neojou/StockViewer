@@ -110,9 +110,10 @@ interface OhlcvRepository {
 
 ```
 [ Database ]  [ K Chart ]
-     ├─ Input  → OhlcvInputDialog（popup）
-     └─ View   → OhlcvDataTableDialog（popup）
-  K Chart      → MainContent.KChart（主區替換）
+     ├─ Input   → OhlcvInputDialog（popup）
+     ├─ View    → OhlcvDataTableDialog（popup）
+     └─ Export  → 系統存檔對話框 → 匯出全部 OHLCV 為 UTF-8 CSV（Excel 可開）
+  K Chart       → MainContent.KChart（主區替換）
 ```
 
 殼層：`StockViewer`（Scaffold + 狀態）。頂部列使用通用 **`com.neojou.tools.ui.menu.MyTopMenuBar`**，由殼層組裝 `List<MyTopMenuItem>`（產品選單定義不在 tools 內）。詳見 ARCHITECTURE 導覽節。
@@ -130,6 +131,24 @@ interface OhlcvRepository {
 - **載入**：日期合法且 DB 有該日 → 填入開高低收量；找不到則錯誤提示  
 - **確認**：驗證後 `upsert`（新增；若日期已存在則覆蓋；日期為 PK，同日不會兩筆）  
 - **取消**：不寫入、關閉  
+
+### 2b. Database → Export（✅）
+
+UI 流程：
+
+1. 選 **Database → Export**
+2. **格式選擇** 對話框：CSV (*.csv) 或 Excel (*.xlsx)
+3. 系統 **另存新檔**（副檔名隨格式）
+4. 讀取全部列（`listAll`，日期升冪）→ 寫入選定格式
+5. Snackbar：成功（筆數＋格式＋路徑）／取消／失敗
+
+| 格式 | 說明 |
+|------|------|
+| **CSV** | UTF-8 + BOM；Excel／通用文字；`OhlcvCsvExporter` |
+| **XLSX** | 正式 Excel（OOXML）；**Desktop only**（Apache POI）；Wasm 不支援 |
+| **.xls** | **不做**（舊二進位格式） |
+
+欄位：`date,open,high,low,close,volume`
 
 ### 2. Database → View（✅）
 

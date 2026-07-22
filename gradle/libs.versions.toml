@@ -8,6 +8,8 @@ dokka = "2.1.0"
 ktor = "3.3.0"
 # Align with official KMP Ktor + SQLDelight tutorial (sqlDelight = 2.3.2)
 sqldelight = "2.3.2"
+# Desktop-only Excel (.xlsx) export
+apache-poi = "5.2.5"
 
 [libraries]
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
@@ -33,6 +35,9 @@ sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", 
 sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
 # WasmJS / JS (Phase 2): WebWorkerDriver + sql.js
 sqldelight-web-worker-driver = { module = "app.cash.sqldelight:web-worker-driver", version.ref = "sqldelight" }
+
+# Apache POI — Desktop JVM only (not for commonMain / Wasm)
+apache-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "apache-poi" }
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

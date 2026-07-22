@@ -71,6 +71,8 @@ kotlin {
                 implementation(libs.ktor.client.cio)
                 // SQLDelight JVM driver (JdbcSqliteDriver)
                 implementation(libs.sqldelight.sqlite.driver)
+                // Excel .xlsx export (JVM only)
+                implementation(libs.apache.poi.ooxml)
             }
         }
         val wasmJsMain by getting {

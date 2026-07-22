@@ -20,6 +20,11 @@ interface OhlcvRepository {
     suspend fun getRecent(limit: Int = 100): Result<List<DailyOhlcv>>
 
     /**
+     * All rows ordered by date ascending (for export / full dump).
+     */
+    suspend fun listAll(): Result<List<DailyOhlcv>>
+
+    /**
      * Load a single bar by trading date (primary key).
      * @return [Result] of null when no row exists for [key].
      */

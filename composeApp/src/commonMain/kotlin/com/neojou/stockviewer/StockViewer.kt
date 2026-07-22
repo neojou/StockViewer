@@ -20,6 +20,10 @@ import androidx.compose.ui.Modifier
 import com.neojou.stockviewer.di.AppContainer
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.stockviewer.presentation.chart.CandlestickChart
+import com.neojou.stockviewer.domain.export.OhlcvExportFormat
+import com.neojou.stockviewer.presentation.export.OhlcvExportFormatDialog
+import com.neojou.stockviewer.presentation.export.OhlcvExportResult
+import com.neojou.stockviewer.presentation.export.exportAllOhlcv
 import com.neojou.stockviewer.presentation.form.OhlcvInputDialog
 import com.neojou.stockviewer.presentation.list.OhlcvDataTableDialog
 import com.neojou.tools.LogLevel
@@ -48,26 +52,46 @@ private enum class MainContent {
  * Primary application shell.
  *
  * Hosts a product-configured [MyTopMenuBar] and content area.
- * - Database → Input opens [OhlcvInputDialog]
- * - Database → View opens [OhlcvDataTableDialog]
+ * - Database → Input / View / Export
  * - K Chart shows [CandlestickChart] in the main content area
  */
 @Composable
 fun StockViewer() {
     var showInputDialog by remember { mutableStateOf(false) }
     var showViewDialog by remember { mutableStateOf(false) }
+    var showExportFormatDialog by remember { mutableStateOf(false) }
     var mainContent by remember { mutableStateOf(MainContent.Home) }
     var repository by remember { mutableStateOf<OhlcvRepository?>(null) }
     var repositoryError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    fun requireRepository(onReady: () -> Unit) {
-        if (repository != null) {
-            onReady()
+    fun requireRepository(onReady: (OhlcvRepository) -> Unit) {
+        val repo = repository
+        if (repo != null) {
+            onReady(repo)
         } else {
             scope.launch {
                 snackbarHostState.showSnackbar(repositoryError ?: "資料庫尚未就緒")
+            }
+        }
+    }
+
+    fun runExport(repo: OhlcvRepository, format: OhlcvExportFormat) {
+        scope.launch {
+            MyLog.add(TAG, "Database > Export (${format.extension})", LogLevel.DEBUG)
+            when (val result = exportAllOhlcv(repo, format)) {
+                is OhlcvExportResult.Success -> {
+                    snackbarHostState.showSnackbar(
+                        "已匯出 ${result.rowCount} 筆 (${result.format.extension}) → ${result.path}",
+                    )
+                }
+                OhlcvExportResult.Cancelled -> {
+                    snackbarHostState.showSnackbar("已取消匯出")
+                }
+                is OhlcvExportResult.Failure -> {
+                    snackbarHostState.showSnackbar("匯出失敗：${result.message}")
+                }
             }
         }
     }
@@ -93,6 +117,14 @@ fun StockViewer() {
                     onClick = {
                         MyLog.add(TAG, "Database > View", LogLevel.DEBUG)
                         requireRepository { showViewDialog = true }
+                    },
+                ),
+                MyTopMenuItem(
+                    id = "db.export",
+                    label = "Export",
+                    onClick = {
+                        MyLog.add(TAG, "Database > Export", LogLevel.DEBUG)
+                        requireRepository { showExportFormatDialog = true }
                     },
                 ),
             ),
@@ -181,6 +213,15 @@ fun StockViewer() {
         OhlcvDataTableDialog(
             repository = repo,
             onDismiss = { showViewDialog = false },
+        )
+    }
+    if (showExportFormatDialog && repo != null) {
+        OhlcvExportFormatDialog(
+            onDismiss = { showExportFormatDialog = false },
+            onConfirm = { format ->
+                showExportFormatDialog = false
+                runExport(repo, format)
+            },
         )
     }
 }
