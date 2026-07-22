@@ -19,6 +19,9 @@ interface OhlcvRepository {
      */
     suspend fun getRecent(limit: Int = 100): Result<List<DailyOhlcv>>
 
-    suspend fun upsert(entry: DailyOhlcv): Result<Unit>
-    suspend fun delete(date: LocalDate): Result<Unit>
+    /** Insert or replace a bar; [row] identity is [DailyOhlcv.date]. */
+    suspend fun upsert(row: DailyOhlcv): Result<Unit>
+
+    /** Delete by trading date (primary key). */
+    suspend fun delete(key: LocalDate): Result<Unit>
 }

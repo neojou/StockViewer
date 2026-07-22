@@ -160,7 +160,9 @@ Dependency rules (enforced by convention today): [`docs/modules/boundaries.md`](
 | `AppContainer` | di | Lazy singleton repository via `openStockViewerData()` |
 | `MyDb` / `MyDbConfig` / `openMyDb` | `com.neojou.tools.database` | Portable SQLite open (Desktop path / Wasm stub) |
 | `MyCrudTable` | `com.neojou.tools.database` | Optional generic table CRUD contract |
+| `MyCrudRepository` | `com.neojou.tools.database` | Open class: delegates CRUD/observeAll to [MyCrudTable] |
 | `DailyOhlcvTable` | data/table | `MyCrudTable` + OHLCV helpers (`getRecent`, range) |
+| `OhlcvRepositoryImpl` | data/repository | Extends `MyCrudRepository`; adds range/recent only |
 | `createHttpClient` | network | Platform engines; **no feature consumer yet** |
 
 **Note:** `presentation/list/OhlcvDataViewDialog.kt` exists but is **not** referenced by `StockViewer` (dead / alternate UI). Treat as gap until removed or wired—do not document as primary View path.

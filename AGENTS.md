@@ -167,6 +167,7 @@ interface OhlcvRepository {
 | P0b | 頂部選單（現為可配置 `MyTopMenuBar`） | ✅ |
 | P0 | Repository + Mapper + AppContainer + Validator | ✅ |
 | P0-db | `tools.database` MyDb / MyCrudTable + DailyOhlcvTable 委派 | ✅ |
+| P1-repo | `MyCrudRepository` 基類；`OhlcvRepositoryImpl` 只補時序查詢 | ✅ |
 | P1 | Input dialog | ✅ |
 | P2 / P2b | K Chart + UX（header/刻度/分隔/十字線） | ✅ |
 | P3a / fix | View 表 + 六欄 weight | ✅ |
