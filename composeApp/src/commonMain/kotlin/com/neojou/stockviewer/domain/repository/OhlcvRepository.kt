@@ -19,7 +19,16 @@ interface OhlcvRepository {
      */
     suspend fun getRecent(limit: Int = 100): Result<List<DailyOhlcv>>
 
-    /** Insert or replace a bar; [row] identity is [DailyOhlcv.date]. */
+    /**
+     * Load a single bar by trading date (primary key).
+     * @return [Result] of null when no row exists for [key].
+     */
+    suspend fun get(key: LocalDate): Result<DailyOhlcv?>
+
+    /**
+     * Insert or replace a bar; [row] identity is [DailyOhlcv.date].
+     * Same date never yields two rows (SQLite PRIMARY KEY + INSERT OR REPLACE).
+     */
     suspend fun upsert(row: DailyOhlcv): Result<Unit>
 
     /** Delete by trading date (primary key). */

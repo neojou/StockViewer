@@ -2,6 +2,7 @@ package com.neojou.stockviewer.domain.validation
 
 import com.neojou.stockviewer.domain.model.DailyOhlcv
 import kotlinx.datetime.LocalDate
+import kotlin.math.abs
 
 /**
  * Result of validating an OHLCV entry or raw form fields.
@@ -17,11 +18,17 @@ sealed class OhlcvValidationResult {
  * Rules (aligned with AGENTS.md):
  * - open / high / low / close > 0
  * - volume ≥ 0
- * - high ≥ low, high ≥ open, high ≥ close
+ * - high ≥ low, high ≥ open, high ≥ close (with float epsilon)
  * - low ≤ open, low ≤ close
  * - date must be valid `YYYY-MM-DD`
  */
 object OhlcvValidator {
+
+    /** Tolerance for REAL / Double round-trip from SQLite. */
+    private const val EPS = 1e-6
+
+    private fun ge(a: Double, b: Double): Boolean = a >= b - EPS
+    private fun le(a: Double, b: Double): Boolean = a <= b + EPS
 
     /**
      * Validates a fully parsed [DailyOhlcv] domain object.
@@ -32,11 +39,13 @@ object OhlcvValidator {
         if (entry.low <= 0.0) return OhlcvValidationResult.Error("最低價必須大於 0")
         if (entry.close <= 0.0) return OhlcvValidationResult.Error("收盤價必須大於 0")
         if (entry.volume < 0L) return OhlcvValidationResult.Error("成交量不可為負數")
-        if (entry.high < entry.low) return OhlcvValidationResult.Error("最高價不可低於最低價")
-        if (entry.high < entry.open || entry.high < entry.close) {
+        if (!ge(entry.high, entry.low)) {
+            return OhlcvValidationResult.Error("最高價不可低於最低價")
+        }
+        if (!ge(entry.high, entry.open) || !ge(entry.high, entry.close)) {
             return OhlcvValidationResult.Error("最高價必須 ≥ 開盤價與收盤價")
         }
-        if (entry.low > entry.open || entry.low > entry.close) {
+        if (!le(entry.low, entry.open) || !le(entry.low, entry.close)) {
             return OhlcvValidationResult.Error("最低價必須 ≤ 開盤價與收盤價")
         }
         return OhlcvValidationResult.Ok
@@ -59,15 +68,15 @@ object OhlcvValidator {
             return null to OhlcvValidationResult.Error("日期格式須為 YYYY-MM-DD")
         }
 
-        val open = openText.trim().toDoubleOrNull()
+        val open = parseDouble(openText)
             ?: return null to OhlcvValidationResult.Error("開盤價格式錯誤")
-        val high = highText.trim().toDoubleOrNull()
+        val high = parseDouble(highText)
             ?: return null to OhlcvValidationResult.Error("最高價格式錯誤")
-        val low = lowText.trim().toDoubleOrNull()
+        val low = parseDouble(lowText)
             ?: return null to OhlcvValidationResult.Error("最低價格式錯誤")
-        val close = closeText.trim().toDoubleOrNull()
+        val close = parseDouble(closeText)
             ?: return null to OhlcvValidationResult.Error("收盤價格式錯誤")
-        val volume = volumeText.trim().toLongOrNull()
+        val volume = parseLong(volumeText)
             ?: return null to OhlcvValidationResult.Error("成交量須為整數")
 
         val entry = DailyOhlcv(
@@ -82,5 +91,22 @@ object OhlcvValidator {
             OhlcvValidationResult.Ok -> entry to OhlcvValidationResult.Ok
             is OhlcvValidationResult.Error -> null to result
         }
+    }
+
+    /** Accepts plain and scientific notation; trims whitespace. */
+    private fun parseDouble(text: String): Double? {
+        val t = text.trim().replace(',', '.')
+        if (t.isEmpty()) return null
+        return t.toDoubleOrNull()
+    }
+
+    private fun parseLong(text: String): Long? {
+        val t = text.trim()
+        if (t.isEmpty()) return null
+        t.toLongOrNull()?.let { return it }
+        // Allow "123.0" style from float formatting
+        val d = t.replace(',', '.').toDoubleOrNull() ?: return null
+        val asLong = d.toLong()
+        return if (abs(d - asLong) < EPS) asLong else null
     }
 }

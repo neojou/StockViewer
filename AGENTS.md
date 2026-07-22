@@ -127,8 +127,9 @@ interface OhlcvRepository {
 | 開/高/低/收 | > 0；high≥low；high≥open/close；low≤open/close |
 | 量 | ≥ 0 整數 |
 
-- **確認**：validate → `upsert` → 成功關閉 + Snackbar  
-- **取消**：不寫入  
+- **載入**：日期合法且 DB 有該日 → 填入開高低收量；找不到則錯誤提示  
+- **確認**：驗證後 `upsert`（新增；若日期已存在則覆蓋；日期為 PK，同日不會兩筆）  
+- **取消**：不寫入、關閉  
 
 ### 2. Database → View（✅）
 
