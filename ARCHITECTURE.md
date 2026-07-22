@@ -78,7 +78,8 @@ composeApp/src/
 │   ├── platform/                       # expect DB driver
 │   ├── network/                        # expect HttpClient (unused by features)
 │   └── …/tools/                        # MyLog, SystemSettings
-│       └── ui/menu/                    # MyTopMenuBar, MyTopMenuItem (shared Compose UI)
+│       ├── ui/menu/                    # MyTopMenuBar, MyTopMenuItem (shared Compose UI)
+│       └── database/                   # MyDb, MyCrudTable, SQLite open (shared)
 ├── commonMain/sqldelight/…/DailyOhlcv.sq
 ├── desktopMain/…                       # actual DB + Ktor CIO
 └── wasmJsMain/…                        # actual DB stub + Ktor Js
@@ -136,7 +137,7 @@ Dependency rules (enforced by convention today): [`docs/modules/boundaries.md`](
 | **DI** | `…di` | Wire implementations (AppContainer) | UI rendering |
 | **Platform** | `…platform` | `SqlDriver` factory expect/actual | Business rules |
 | **Network** | `…network` | Ktor `HttpClient` factory expect/actual | Currently unused by features |
-| **Tools** | `…tools` | Logging, process init | Domain rules |
+| **Tools** | `…tools` | Logging, process init, shared menu UI, **MyDb** | Domain rules; no product schema |
 | **Shell** | `App`, `StockViewer` | Bootstrap, navigation orchestration | SQL details |
 
 ---
@@ -156,8 +157,10 @@ Dependency rules (enforced by convention today): [`docs/modules/boundaries.md`](
 | `OhlcvValidator` | domain/validation | Parse/validate OHLC rules |
 | `OhlcvRepository` | domain/repository | Persistence contract (`Flow` + suspend `Result`) |
 | `OhlcvRepositoryImpl` | data/repository | SQLDelight-backed impl |
-| `AppContainer` | di | Lazy singleton repository |
-| `DatabaseDriverFactory` | platform | Desktop JDBC file vs Wasm stub |
+| `AppContainer` | di | Lazy singleton repository via `openStockViewerData()` |
+| `MyDb` / `MyDbConfig` / `openMyDb` | `com.neojou.tools.database` | Portable SQLite open (Desktop path / Wasm stub) |
+| `MyCrudTable` | `com.neojou.tools.database` | Optional generic table CRUD contract |
+| `DailyOhlcvTable` | data/table | `MyCrudTable` + OHLCV helpers (`getRecent`, range) |
 | `createHttpClient` | network | Platform engines; **no feature consumer yet** |
 
 **Note:** `presentation/list/OhlcvDataViewDialog.kt` exists but is **not** referenced by `StockViewer` (dead / alternate UI). Treat as gap until removed or wired—do not document as primary View path.
@@ -185,7 +188,7 @@ DailyOhlcv(
 - Database name: `StockViewerDatabase`
 - Table: `daily_ohlcv` (see `.sq` under `commonMain/sqldelight`)
 - Queries: `selectAll`, `selectByDateRange`, `selectRecent`, `insertOrReplace`, `deleteByDate`
-- Desktop path: `{user.home}/.stockviewer/spacex.db`
+- Desktop path: `{user.home}/.stockviewer/spacex.db` via `MyDbConfig(appName="stockviewer", databaseFileName="spacex.db")`
 
 Migration policy is **not fully productized** (gap): treat schema changes carefully; prefer SQLDelight migrations before shipping breaking changes to existing user DBs.
 

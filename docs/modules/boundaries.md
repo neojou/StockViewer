@@ -20,6 +20,7 @@ See also: [`ARCHITECTURE.md`](../../ARCHITECTURE.md), [ADR 0004](../adr/0004-rep
 | Network | `com.neojou.stockviewer.network.*` | commonMain + desktopMain + wasmJsMain |
 | Tools (non-UI) | `com.neojou.tools` (`MyLog`, `SystemSettings`, …) | commonMain |
 | Tools UI (shared) | `com.neojou.tools.ui.*` (e.g. `ui.menu`) | commonMain |
+| Tools DB (shared) | `com.neojou.tools.database.*` (`MyDb`, `MyCrudTable`, …) | commonMain + platform actuals |
 | SQLDelight generated | `com.neojou.stockviewer.database.*` | generated into build |
 
 ---
@@ -31,8 +32,8 @@ Rows depend on columns. `✅` allowed · `❌` forbidden · `△` limited · `�
 | From \ To | domain | data | presentation | di | platform | network | tools | database (gen) |
 |-----------|--------|------|--------------|-----|----------|---------|-------|----------------|
 | **domain** | — | ❌ | ❌ | ❌ | ❌ | ❌ | △ log-free preferred | ❌ |
-| **data** | ✅ | — | ❌ | ❌ | △ only types needed for driver handoff | ❌ | ✅ MyLog | ✅ |
-| **presentation** | ✅ | ❌ | — | ❌¹ | ❌ | ❌² | ✅ MyLog | ❌ |
+| **data** | ✅ | — | ❌ | ❌ | △ app wiring only | ❌ | ✅ MyLog + **database** (`MyDb`/`MyCrudTable`) | ✅ |
+| **presentation** | ✅ | ❌ | — | ❌¹ | ❌ | ❌² | ✅ MyLog; ❌ database.* | ❌ |
 | **di** | ✅ | ✅ | ❌ | — | ✅ | △ if wiring clients | ✅ | ❌ direct prefer factory |
 | **shell (App/StockViewer)** | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | **platform** | ❌ | ❌ | ❌ | ❌ | — | ❌ | △ | ✅ Schema only as needed |
@@ -48,7 +49,8 @@ Rows depend on columns. `✅` allowed · `❌` forbidden · `△` limited · `�
 ## Hard rules
 
 1. **Presentation → SQLDelight generated package is forbidden.**  
-   No `import com.neojou.stockviewer.database...` in `presentation` or shell UI files.
+   No `import com.neojou.stockviewer.database...` in `presentation` or shell UI files.  
+   Presentation also must **not** import `com.neojou.tools.database` (use domain repositories only).
 2. **Domain stays pure Kotlin** for model/validation/repository interfaces.  
    No Compose, no SQLDelight, no `java.*`.
 3. **Top menu chrome is app-agnostic in tools.**  

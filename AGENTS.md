@@ -70,7 +70,8 @@ composeApp/src/commonMain/kotlin/com/neojou/stockviewer/
 ### Schema（SQLDelight）
 
 路徑：`composeApp/src/commonMain/sqldelight/com/neojou/stockviewer/database/DailyOhlcv.sq`  
-資料庫：`StockViewerDatabase`；Desktop 檔案：`~/.stockviewer/spacex.db`。
+資料庫：`StockViewerDatabase`；Desktop 檔案：`~/.stockviewer/spacex.db`  
+（經 `com.neojou.tools.database.MyDb` + `MyDbConfig(appName="stockviewer", databaseFileName="spacex.db")` 開啟）。
 
 | 欄位 | 型別 | 說明 |
 |------|------|------|
@@ -165,6 +166,7 @@ interface OhlcvRepository {
 | P0a | SQLDelight + drivers + Ktor scaffold | ✅ |
 | P0b | 頂部選單（現為可配置 `MyTopMenuBar`） | ✅ |
 | P0 | Repository + Mapper + AppContainer + Validator | ✅ |
+| P0-db | `tools.database` MyDb / MyCrudTable + DailyOhlcvTable 委派 | ✅ |
 | P1 | Input dialog | ✅ |
 | P2 / P2b | K Chart + UX（header/刻度/分隔/十字線） | ✅ |
 | P3a / fix | View 表 + 六欄 weight | ✅ |

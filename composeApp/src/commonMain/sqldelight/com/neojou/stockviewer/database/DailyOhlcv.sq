@@ -14,6 +14,11 @@ SELECT *
 FROM daily_ohlcv
 ORDER BY date ASC;
 
+selectByDate:
+SELECT *
+FROM daily_ohlcv
+WHERE date = :date;
+
 selectByDateRange:
 SELECT *
 FROM daily_ohlcv
