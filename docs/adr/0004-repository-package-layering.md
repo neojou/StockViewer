@@ -19,7 +19,7 @@ The project is a **single** Gradle module (`:composeApp`). We still need clear b
 2. **Repository interface** (`OhlcvRepository`) is the only persistence API for features.
 3. **Presentation must not** import SQLDelight generated types under `com.neojou.stockviewer.database`.
 4. **DI stays manual** (`AppContainer`) until dependency graph complexity justifies a framework.
-5. Navigation chrome (`AppToolbar`) emits **callbacks only**; shell owns repository access.
+5. Navigation chrome uses shared `MyTopMenuBar` with host-supplied `MyTopMenuItem`s; shell owns repository access and product menu actions.
 
 Detailed import matrix: [`docs/modules/boundaries.md`](../modules/boundaries.md).
 

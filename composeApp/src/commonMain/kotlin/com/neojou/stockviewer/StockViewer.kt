@@ -22,10 +22,10 @@ import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.stockviewer.presentation.chart.CandlestickChart
 import com.neojou.stockviewer.presentation.form.OhlcvInputDialog
 import com.neojou.stockviewer.presentation.list.OhlcvDataTableDialog
-import com.neojou.stockviewer.presentation.toolbar.AppToolbar
-import com.neojou.stockviewer.presentation.toolbar.DatabaseSubMenu
 import com.neojou.tools.LogLevel
 import com.neojou.tools.MyLog
+import com.neojou.tools.ui.menu.MyTopMenuBar
+import com.neojou.tools.ui.menu.MyTopMenuItem
 import kotlinx.coroutines.launch
 
 /**
@@ -47,7 +47,7 @@ private enum class MainContent {
 /**
  * Primary application shell.
  *
- * Hosts the top [AppToolbar] and content area.
+ * Hosts a product-configured [MyTopMenuBar] and content area.
  * - Database → Input opens [OhlcvInputDialog]
  * - Database → View opens [OhlcvDataTableDialog]
  * - K Chart shows [CandlestickChart] in the main content area
@@ -72,6 +72,43 @@ fun StockViewer() {
         }
     }
 
+    // Product-specific menu tree only; [MyTopMenuBar] stays app-agnostic.
+    // Rebuilt each composition so callbacks always see current shell state.
+    val topMenus = listOf(
+        MyTopMenuItem(
+            id = "database",
+            label = "Database",
+            children = listOf(
+                MyTopMenuItem(
+                    id = "db.input",
+                    label = "Input",
+                    onClick = {
+                        MyLog.add(TAG, "Database > Input", LogLevel.DEBUG)
+                        requireRepository { showInputDialog = true }
+                    },
+                ),
+                MyTopMenuItem(
+                    id = "db.view",
+                    label = "View",
+                    onClick = {
+                        MyLog.add(TAG, "Database > View", LogLevel.DEBUG)
+                        requireRepository { showViewDialog = true }
+                    },
+                ),
+            ),
+        ),
+        MyTopMenuItem(
+            id = "kchart",
+            label = "K Chart",
+            onClick = {
+                requireRepository {
+                    mainContent = MainContent.KChart
+                    MyLog.add(TAG, "Show K Chart", LogLevel.DEBUG)
+                }
+            },
+        ),
+    )
+
     LaunchedEffect(Unit) {
         MyLog.add(TAG, "Enter", LogLevel.DEBUG)
         AppContainer.ohlcvRepository()
@@ -84,20 +121,7 @@ fun StockViewer() {
 
     Scaffold(
         topBar = {
-            AppToolbar(
-                onDatabaseSubMenuClick = { menu ->
-                    when (menu) {
-                        DatabaseSubMenu.Input -> requireRepository { showInputDialog = true }
-                        DatabaseSubMenu.View -> requireRepository { showViewDialog = true }
-                    }
-                },
-                onKChartClick = {
-                    requireRepository {
-                        mainContent = MainContent.KChart
-                        MyLog.add(TAG, "Show K Chart", LogLevel.DEBUG)
-                    }
-                },
-            )
+            MyTopMenuBar(items = topMenus)
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { innerPadding ->

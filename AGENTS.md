@@ -114,7 +114,7 @@ interface OhlcvRepository {
   K Chart      → MainContent.KChart（主區替換）
 ```
 
-殼層：`StockViewer`（Scaffold + 狀態）。詳見 ARCHITECTURE 導覽節。
+殼層：`StockViewer`（Scaffold + 狀態）。頂部列使用通用 **`com.neojou.tools.ui.menu.MyTopMenuBar`**，由殼層組裝 `List<MyTopMenuItem>`（產品選單定義不在 tools 內）。詳見 ARCHITECTURE 導覽節。
 
 ### 1. Database → Input（✅）
 
@@ -163,7 +163,7 @@ interface OhlcvRepository {
 | 階段 | 內容 | 狀態 |
 |------|------|------|
 | P0a | SQLDelight + drivers + Ktor scaffold | ✅ |
-| P0b | AppToolbar | ✅ |
+| P0b | 頂部選單（現為可配置 `MyTopMenuBar`） | ✅ |
 | P0 | Repository + Mapper + AppContainer + Validator | ✅ |
 | P1 | Input dialog | ✅ |
 | P2 / P2b | K Chart + UX（header/刻度/分隔/十字線） | ✅ |
@@ -205,7 +205,7 @@ interface OhlcvRepository {
 2. **功能實作** → 先 domain 介面 → data → presentation。  
 3. **禁止** commonMain 的 `java.*`；平台放 `desktopMain` / `wasmJsMain`。  
 4. **禁止** presentation 依賴 SQLDelight 生成碼。  
-5. **導覽**只經 toolbar callback + `StockViewer` state。  
+5. **導覽**只經 `MyTopMenuBar` 的 `MyTopMenuItem.onClick`（殼層組裝）+ `StockViewer` state；**不要**把產品選單寫死進 `MyTopMenuBar`。  
 6. **K 線**維持紅漲綠跌與 §K Chart 契約，除非產品明確改規。  
 7. **Desktop 為準**：`./gradlew :composeApp:compileKotlinDesktop` 或 `:composeApp:run`。  
 8. 規劃更新 `ARCHITECTURE`/ADR；行為契約更新本文件；**已驗證變更要回寫對應文件**。  

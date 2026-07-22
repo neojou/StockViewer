@@ -18,7 +18,8 @@ See also: [`ARCHITECTURE.md`](../../ARCHITECTURE.md), [ADR 0004](../adr/0004-rep
 | DI | `com.neojou.stockviewer.di.*` | commonMain |
 | Platform DB | `com.neojou.stockviewer.platform.*` | commonMain + desktopMain + wasmJsMain |
 | Network | `com.neojou.stockviewer.network.*` | commonMain + desktopMain + wasmJsMain |
-| Tools | `com.neojou.tools.*` | commonMain |
+| Tools (non-UI) | `com.neojou.tools` (`MyLog`, `SystemSettings`, …) | commonMain |
+| Tools UI (shared) | `com.neojou.tools.ui.*` (e.g. `ui.menu`) | commonMain |
 | SQLDelight generated | `com.neojou.stockviewer.database.*` | generated into build |
 
 ---
@@ -50,8 +51,9 @@ Rows depend on columns. `✅` allowed · `❌` forbidden · `△` limited · `�
    No `import com.neojou.stockviewer.database...` in `presentation` or shell UI files.
 2. **Domain stays pure Kotlin** for model/validation/repository interfaces.  
    No Compose, no SQLDelight, no `java.*`.
-3. **Toolbar is navigation-only.**  
-   `AppToolbar` emits callbacks; it does not call `OhlcvRepository`.
+3. **Top menu chrome is app-agnostic in tools.**  
+   `com.neojou.tools.ui.menu.MyTopMenuBar` only renders configured items; it must not import `stockviewer` or call repositories.  
+   Product menus (labels + `onClick`) are assembled in the app shell (`StockViewer`).
 4. **Platform code owns file paths and drivers.**  
    Desktop may use `java.io.File`; commonMain must not.
 5. **Features depend on `OhlcvRepository`, not `OhlcvRepositoryImpl`.**  

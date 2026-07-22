@@ -77,7 +77,8 @@ composeApp/src/
 │   ├── di/                             # AppContainer
 │   ├── platform/                       # expect DB driver
 │   ├── network/                        # expect HttpClient (unused by features)
-│   └── …/tools/                        # MyLog, SystemSettings (cross-cutting)
+│   └── …/tools/                        # MyLog, SystemSettings
+│       └── ui/menu/                    # MyTopMenuBar, MyTopMenuItem (shared Compose UI)
 ├── commonMain/sqldelight/…/DailyOhlcv.sq
 ├── desktopMain/…                       # actual DB + Ktor CIO
 └── wasmJsMain/…                        # actual DB stub + Ktor Js
@@ -87,7 +88,7 @@ composeApp/src/
 flowchart TB
   subgraph Presentation
     Shell[StockViewer shell]
-    TB[AppToolbar]
+    TB[MyTopMenuBar]
     Input[OhlcvInputDialog]
     View[OhlcvDataTableDialog]
     Chart[CandlestickChart]
@@ -146,7 +147,8 @@ Dependency rules (enforced by convention today): [`docs/modules/boundaries.md`](
 |-----------|----------|----------------|
 | `App` | shell | Theme, one-shot `SystemSettings`, host `StockViewer` |
 | `StockViewer` | shell | Toolbar callbacks, repository acquire, dialog flags, `MainContent` |
-| `AppToolbar` | presentation/toolbar | Menu UI only; emits callbacks |
+| `MyTopMenuBar` / `MyTopMenuItem` | `com.neojou.tools.ui.menu` | Configurable top menu (no product labels); host supplies items |
+| StockViewer menu assembly | `StockViewer.kt` | Product menu tree (Database / K Chart) as `List<MyTopMenuItem>` |
 | `OhlcvInputDialog` | presentation/form | Form fields, validate, `upsert` |
 | `OhlcvDataTableDialog` | presentation/list | `getRecent(100)`, six-column table |
 | `CandlestickChart` | presentation/chart | 30-day candles + volume + crosshair; **currently** observes repository internally |
@@ -232,16 +234,18 @@ Toolbar K Chart → MainContent.KChart
 ## 8. Navigation model
 
 ```text
-AppToolbar
-├── Database
-│   ├── Input  → modal dialog (overlay)
-│   └── View   → modal dialog (overlay)
-└── K Chart    → replaces main content (Home | KChart)
+MyTopMenuBar(items = …)   // generic UI in tools.ui.menu
+└── items built in StockViewer:
+    ├── Database
+    │   ├── Input  → modal dialog (overlay)
+    │   └── View   → modal dialog (overlay)
+    └── K Chart    → replaces main content (Home | KChart)
 ```
 
 Rules:
 
-- Toolbar **never** calls Repository.
+- `MyTopMenuBar` is **app-agnostic**; it only renders `List<MyTopMenuItem>`.
+- Product labels/actions live in the **host** (`StockViewer`); other apps reuse the bar without editing tools.
 - Shell owns dialog visibility and `MainContent`.
 - Repository readiness: `AppContainer.ohlcvRepository(): Result`; failure → Snackbar (expected on Wasm Phase 1).
 
