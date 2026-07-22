@@ -25,6 +25,11 @@ import com.neojou.stockviewer.presentation.export.OhlcvExportFormatDialog
 import com.neojou.stockviewer.presentation.export.OhlcvExportResult
 import com.neojou.stockviewer.presentation.export.exportAllOhlcv
 import com.neojou.stockviewer.presentation.form.OhlcvInputDialog
+import com.neojou.stockviewer.presentation.import.OhlcvImportConfirmDialog
+import com.neojou.stockviewer.presentation.import.OhlcvImportPickResult
+import com.neojou.stockviewer.presentation.import.OhlcvImportPreview
+import com.neojou.stockviewer.presentation.import.applyOhlcvImport
+import com.neojou.stockviewer.presentation.import.pickAndParseOhlcvImport
 import com.neojou.stockviewer.presentation.list.OhlcvDataTableDialog
 import com.neojou.tools.LogLevel
 import com.neojou.tools.MyLog
@@ -52,7 +57,7 @@ private enum class MainContent {
  * Primary application shell.
  *
  * Hosts a product-configured [MyTopMenuBar] and content area.
- * - Database → Input / View / Export
+ * - Database → Input / View / Export / Import
  * - K Chart shows [CandlestickChart] in the main content area
  */
 @Composable
@@ -60,6 +65,7 @@ fun StockViewer() {
     var showInputDialog by remember { mutableStateOf(false) }
     var showViewDialog by remember { mutableStateOf(false) }
     var showExportFormatDialog by remember { mutableStateOf(false) }
+    var importPreview by remember { mutableStateOf<OhlcvImportPreview?>(null) }
     var mainContent by remember { mutableStateOf(MainContent.Home) }
     var repository by remember { mutableStateOf<OhlcvRepository?>(null) }
     var repositoryError by remember { mutableStateOf<String?>(null) }
@@ -96,6 +102,34 @@ fun StockViewer() {
         }
     }
 
+    fun runImportPick() {
+        scope.launch {
+            MyLog.add(TAG, "Database > Import", LogLevel.DEBUG)
+            when (val result = pickAndParseOhlcvImport()) {
+                is OhlcvImportPickResult.Ready -> {
+                    importPreview = result.preview
+                }
+                OhlcvImportPickResult.Cancelled -> {
+                    snackbarHostState.showSnackbar("已取消匯入")
+                }
+                is OhlcvImportPickResult.Failure -> {
+                    snackbarHostState.showSnackbar("匯入失敗：${result.message}")
+                }
+            }
+        }
+    }
+
+    fun runImportApply(repo: OhlcvRepository, preview: OhlcvImportPreview) {
+        scope.launch {
+            val stats = applyOhlcvImport(
+                repository = repo,
+                rows = preview.rows,
+                skippedInvalid = preview.skippedInvalid,
+            )
+            snackbarHostState.showSnackbar("匯入完成：${stats.summary}")
+        }
+    }
+
     // Product-specific menu tree only; [MyTopMenuBar] stays app-agnostic.
     // Rebuilt each composition so callbacks always see current shell state.
     val topMenus = listOf(
@@ -125,6 +159,13 @@ fun StockViewer() {
                     onClick = {
                         MyLog.add(TAG, "Database > Export", LogLevel.DEBUG)
                         requireRepository { showExportFormatDialog = true }
+                    },
+                ),
+                MyTopMenuItem(
+                    id = "db.import",
+                    label = "Import",
+                    onClick = {
+                        requireRepository { runImportPick() }
                     },
                 ),
             ),
@@ -221,6 +262,17 @@ fun StockViewer() {
             onConfirm = { format ->
                 showExportFormatDialog = false
                 runExport(repo, format)
+            },
+        )
+    }
+    val preview = importPreview
+    if (preview != null && repo != null) {
+        OhlcvImportConfirmDialog(
+            preview = preview,
+            onDismiss = { importPreview = null },
+            onConfirm = {
+                importPreview = null
+                runImportApply(repo, preview)
             },
         )
     }

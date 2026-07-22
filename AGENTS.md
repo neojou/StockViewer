@@ -112,7 +112,8 @@ interface OhlcvRepository {
 [ Database ]  [ K Chart ]
      ├─ Input   → OhlcvInputDialog（popup）
      ├─ View    → OhlcvDataTableDialog（popup）
-     └─ Export  → 系統存檔對話框 → 匯出全部 OHLCV 為 UTF-8 CSV（Excel 可開）
+     ├─ Export  → 格式選擇 → 另存新檔 → CSV / XLSX
+     └─ Import  → 開啟檔案 → 確認合併 → 寫入 DB
   K Chart       → MainContent.KChart（主區替換）
 ```
 
@@ -149,6 +150,25 @@ UI 流程：
 | **.xls** | **不做**（舊二進位格式） |
 
 欄位：`date,open,high,low,close,volume`
+
+### 2c. Database → Import（✅）
+
+UI 流程：
+
+1. **Database → Import**
+2. 系統 **開啟檔案**（`.csv` / `.xlsx`，依副檔名解析）
+3. 解析 + 列級驗證；無效列略過
+4. **確認匯入**對話框（摘要 + 合併規則）
+5. 依規則寫入；Snackbar：`新增 a，更新 b，相同略過 c，無效 d`
+
+合併語意（date = PK）：
+
+| 情況 | 行為 |
+|------|------|
+| 檔案有、DB 無 | **新增**（upsert） |
+| 兩邊都有、內容不同 | **更新**（upsert） |
+| 兩邊都有、內容相同 | **不寫入**（`isSameContentAs`） |
+| 檔案無、DB 有 | **保留**（不 delete） |
 
 ### 2. Database → View（✅）
 
