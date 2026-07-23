@@ -3,7 +3,11 @@ package com.neojou.stockviewer.presentation.chart
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -15,7 +19,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -49,48 +56,75 @@ import com.neojou.tools.MyLog
 import kotlinx.coroutines.flow.map
 
 private const val TAG = "CandleChart"
-private const val CHART_DAYS = 30
 
 /**
  * Full K-line panel inspired by [docs/k_chart.jpg]:
  * - Header: selected day's OHLCV
- * - Middle: candlesticks (red up / green down)
- * - Bottom: volume bars
+ * - Price pane: candlesticks (red up / green down)
+ * - Nav bar: `<` pan left · `+` zoom in · `-` zoom out · `>` pan right
+ * - Volume pane: volume bars + date axis
  *
- * Shows the most recent [CHART_DAYS] sessions (oldest → left, newest → right).
- * Initial selection is the rightmost bar; click a bar to update the header.
+ * Loads full series via [OhlcvRepository.observeAll], then shows a viewport
+ * (default last [DEFAULT_VISIBLE_COUNT] sessions). Left = older, right = newer.
  */
 @Composable
 fun CandlestickChart(
     repository: OhlcvRepository,
     chartModifier: Modifier = Modifier,
-    dayCount: Int = CHART_DAYS,
 ) {
-    var data by remember { mutableStateOf<List<DailyOhlcv>>(emptyList()) }
-    var selectedIndex by remember { mutableStateOf(-1) }
+    var allData by remember { mutableStateOf<List<DailyOhlcv>>(emptyList()) }
+    var viewport by remember { mutableStateOf(ChartViewport.initial(0)) }
+    /** Index within the *visible* window (0 .. visible.lastIndex). */
+    var selectedVisibleIndex by remember { mutableStateOf(-1) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(repository, dayCount) {
+    LaunchedEffect(repository) {
         isLoading = true
         errorMessage = null
         repository.observeAll()
-            .map { all -> all.sortedBy { it.date }.takeLast(dayCount) }
+            .map { all -> all.sortedBy { it.date } }
             .collect { rows ->
-                val previousDate = data.getOrNull(selectedIndex)?.date
-                data = rows
-                // Prefer previous date; otherwise rightmost bar (closest to today).
-                selectedIndex = when {
-                    rows.isEmpty() -> -1
-                    previousDate != null -> {
-                        val idx = rows.indexOfFirst { it.date == previousDate }
-                        if (idx >= 0) idx else rows.lastIndex
+                val previousAll = allData
+                val previousVisible = viewport.slice(previousAll)
+                val previousSelectedDate =
+                    previousVisible.getOrNull(selectedVisibleIndex)?.date
+
+                viewport = ChartViewport.reconcile(viewport, previousAll, rows)
+                allData = rows
+
+                val visible = viewport.slice(rows)
+                selectedVisibleIndex = when {
+                    visible.isEmpty() -> -1
+                    previousSelectedDate != null -> {
+                        val idx = visible.indexOfFirst { it.date == previousSelectedDate }
+                        if (idx >= 0) idx else visible.lastIndex
                     }
-                    else -> rows.lastIndex
+                    else -> visible.lastIndex
                 }
                 isLoading = false
-                MyLog.add(TAG, "Chart data size=${rows.size}, selected=$selectedIndex", LogLevel.DEBUG)
+                MyLog.add(
+                    TAG,
+                    "Chart n=${rows.size}, visible=${visible.size}, " +
+                        "end=${viewport.windowEnd}, sel=$selectedVisibleIndex",
+                    LogLevel.DEBUG,
+                )
             }
+    }
+
+    fun applyViewport(next: ChartViewport) {
+        val prevVisible = viewport.slice(allData)
+        val prevDate = prevVisible.getOrNull(selectedVisibleIndex)?.date
+        viewport = next
+        val visible = next.slice(allData)
+        selectedVisibleIndex = when {
+            visible.isEmpty() -> -1
+            prevDate != null -> {
+                val idx = visible.indexOfFirst { it.date == prevDate }
+                if (idx >= 0) idx else visible.lastIndex
+            }
+            else -> visible.lastIndex
+        }
     }
 
     Column(
@@ -116,7 +150,7 @@ fun CandlestickChart(
                     Text(text = errorMessage.orEmpty(), color = ChartColors.Up)
                 }
             }
-            data.isEmpty() -> {
+            allData.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
@@ -129,30 +163,155 @@ fun CandlestickChart(
                 }
             }
             else -> {
-                val selected = data.getOrNull(selectedIndex) ?: data.last()
+                val visible = viewport.slice(allData)
+                val selected = visible.getOrNull(selectedVisibleIndex)
+                    ?: visible.lastOrNull()
+                    ?: return@Column
+                val selIndex = selectedVisibleIndex.coerceIn(0, visible.lastIndex)
+
                 ChartHeader(entry = selected)
                 Spacer(modifier = Modifier.height(6.dp))
-                CandlestickCanvas(
-                    data = data,
-                    selectedIndex = selectedIndex.coerceIn(0, data.lastIndex),
-                    onSelectIndex = { selectedIndex = it },
+
+                PriceCanvas(
+                    data = visible,
+                    selectedIndex = selIndex,
+                    onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .weight(0.72f),
+                )
+
+                val total = allData.size
+                ChartNavBar(
+                    visibleCount = visible.size,
+                    canPanLeft = viewport.canPanLeft(total),
+                    canPanRight = viewport.canPanRight(total),
+                    canZoomIn = viewport.canZoomIn && visible.size > MIN_VISIBLE_COUNT,
+                    canZoomOut = viewport.canZoomOut(total),
+                    onPanLeft = { applyViewport(viewport.panLeft(total)) },
+                    onPanRight = { applyViewport(viewport.panRight(total)) },
+                    onZoomIn = { applyViewport(viewport.zoomIn(total)) },
+                    onZoomOut = { applyViewport(viewport.zoomOut(total)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                )
+
+                VolumeCanvas(
+                    data = visible,
+                    selectedIndex = selIndex,
+                    onSelectIndex = { selectedVisibleIndex = it },
+                    canvasModifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.28f),
                 )
             }
         }
     }
 }
 
+// ─── Nav bar: < + - > ────────────────────────────────────────────────────────
+
+@Composable
+private fun ChartNavBar(
+    visibleCount: Int,
+    canPanLeft: Boolean,
+    canPanRight: Boolean,
+    canZoomIn: Boolean,
+    canZoomOut: Boolean,
+    onPanLeft: () -> Unit,
+    onPanRight: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.height(36.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = "${visibleCount}日",
+            color = ChartColors.AxisText,
+            style = MaterialTheme.typography.labelMedium,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(end = 12.dp),
+        )
+
+        Row(
+            modifier = Modifier
+                .height(32.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(ChartColors.NavBarBg)
+                .border(1.dp, ChartColors.NavBarBorder, RoundedCornerShape(6.dp)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NavButton(label = "‹", enabled = canPanLeft, onClick = onPanLeft)
+            NavDivider()
+            NavButton(label = "＋", enabled = canZoomIn, onClick = onZoomIn)
+            NavDivider()
+            NavButton(label = "－", enabled = canZoomOut, onClick = onZoomOut)
+            NavDivider()
+            NavButton(label = "›", enabled = canPanRight, onClick = onPanRight)
+        }
+    }
+}
+
+@Composable
+private fun NavDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .fillMaxHeight()
+            .background(ChartColors.NavBarBorder),
+    )
+}
+
+@Composable
+private fun NavButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val bg = when {
+        !enabled -> Color.Transparent
+        pressed -> ChartColors.NavButtonPress
+        else -> Color.Transparent
+    }
+    val fg = if (enabled) ChartColors.NavButtonEnabled else ChartColors.NavButtonDisabled
+
+    Box(
+        modifier = Modifier
+            .size(width = 36.dp, height = 32.dp)
+            .background(bg)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = fg,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+// ─── Header ──────────────────────────────────────────────────────────────────
+
 /**
- * Selected-day OHLCV header as a 2×3 grid (matches prior field order):
+ * Selected-day OHLCV header as a 2×3 grid:
  * ```
  * | 日期     | 開  xxx | 低  xxx |
  * | 量  xxx  | 高  xxx | 收  xxx |
  * ```
- * Column 2 labels (開/高) and column 3 labels (低/收) share a fixed label
- * width so they line up vertically.
  */
 @Composable
 private fun ChartHeader(entry: DailyOhlcv) {
@@ -165,7 +324,6 @@ private fun ChartHeader(entry: DailyOhlcv) {
             .padding(horizontal = 4.dp, vertical = 4.dp)
             .border(width = 1.dp, color = grid),
     ) {
-        // Row 1: 日期 | 開 | 低
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -185,7 +343,6 @@ private fun ChartHeader(entry: DailyOhlcv) {
             }
         }
         HorizontalDivider(thickness = 1.dp, color = grid)
-        // Row 2: 量 | 高 | 收
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -245,10 +402,6 @@ private fun HeaderDateContent(text: String) {
     )
 }
 
-/**
- * Label + value. [LABEL_WIDTH] is shared so 開/高 and 低/收 align across rows
- * within the same column.
- */
 @Composable
 private fun HeaderFieldContent(
     label: String,
@@ -281,11 +434,12 @@ private fun HeaderFieldContent(
     }
 }
 
-/** Fixed label column width so 開↔高 and 低↔收 line up. */
 private val LABEL_WIDTH = 18.dp
 
+// ─── Price canvas ────────────────────────────────────────────────────────────
+
 @Composable
-private fun CandlestickCanvas(
+private fun PriceCanvas(
     data: List<DailyOhlcv>,
     selectedIndex: Int,
     onSelectIndex: (Int) -> Unit,
@@ -297,35 +451,34 @@ private fun CandlestickCanvas(
         fontSize = 10.sp,
         fontFamily = FontFamily.Monospace,
     )
+    val scale = remember(data) { PriceScale.from(data) }
 
     Canvas(
         modifier = canvasModifier
             .fillMaxSize()
             .pointerInput(data) {
                 detectTapGestures { offset ->
-                    val layout = ChartLayout.from(
-                        width = size.width.toFloat(),
-                        height = size.height.toFloat(),
-                        data = data,
-                    )
-                    layout.indexAtX(offset.x)?.let(onSelectIndex)
+                    val slots = SlotGeometry(size.width.toFloat(), data.size)
+                    slots.indexAtX(offset.x)?.let(onSelectIndex)
                 }
             },
     ) {
-        val layout = ChartLayout.from(
-            width = size.width,
-            height = size.height,
-            data = data,
+        val layout = PricePaneLayout(
+            canvasWidth = size.width,
+            canvasHeight = size.height,
+            barCount = data.size,
+            scale = scale,
         )
+        val slots = layout.slots
+        val bodyWidth = slots.bodyWidth()
+        val wickStroke = slots.wickStroke()
 
-        // Price horizontal grid + labels (mapped into pricePlot* so labels stay in pane)
-        val priceTicks = layout.priceTicks()
-        for (tick in priceTicks) {
+        for (tick in layout.priceTicks()) {
             val y = layout.priceToY(tick)
             drawLine(
                 color = ChartColors.Grid,
-                start = Offset(layout.chartLeft, y),
-                end = Offset(layout.chartRight, y),
+                start = Offset(slots.chartLeft, y),
+                end = Offset(slots.chartRight, y),
                 strokeWidth = 1f,
             )
             val label = formatPrice(tick)
@@ -335,70 +488,15 @@ private fun CandlestickCanvas(
             drawText(
                 textLayoutResult = measured,
                 topLeft = Offset(
-                    x = (layout.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
+                    x = (slots.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
                     y = labelY,
                 ),
             )
         }
 
-        // Clear separator between price K-line pane and volume pane
-        drawRect(
-            color = Color(0xFF141414),
-            topLeft = Offset(0f, layout.priceBottom),
-            size = Size(size.width, layout.separatorHeight),
-        )
-        drawLine(
-            color = ChartColors.HeaderText.copy(alpha = 0.35f),
-            start = Offset(layout.chartLeft, layout.separatorY),
-            end = Offset(layout.chartRight, layout.separatorY),
-            strokeWidth = 1.5f,
-        )
-        // Thin edges of the separator band for a clearer split
-        drawLine(
-            color = ChartColors.Grid,
-            start = Offset(layout.chartLeft, layout.priceBottom),
-            end = Offset(layout.chartRight, layout.priceBottom),
-            strokeWidth = 1f,
-        )
-        drawLine(
-            color = ChartColors.Grid,
-            start = Offset(layout.chartLeft, layout.volumeTop),
-            end = Offset(layout.chartRight, layout.volumeTop),
-            strokeWidth = 1f,
-        )
-
-        // Volume horizontal grid + labels (inside volume plot area only)
-        val volSteps = 3
-        for (i in 0..volSteps) {
-            val ratio = i.toFloat() / volSteps
-            val y = layout.volumePlotBottom - ratio * layout.volumePlotHeight
-            drawLine(
-                color = ChartColors.Grid,
-                start = Offset(layout.chartLeft, y),
-                end = Offset(layout.chartRight, y),
-                strokeWidth = 1f,
-            )
-            if (i > 0) {
-                val vol = (layout.volumeMax * ratio).toLong()
-                val label = formatVolume(vol)
-                val measured = textMeasurer.measure(label, labelStyle)
-                val labelY = (y - measured.size.height / 2f)
-                    .coerceIn(layout.volumePlotTop, layout.volumePlotBottom - measured.size.height)
-                drawText(
-                    textLayoutResult = measured,
-                    topLeft = Offset(
-                        x = (layout.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
-                        y = labelY,
-                    ),
-                )
-            }
-        }
-
-        // Candles + volume bars
-        val bodyWidth = (layout.slotWidth * 0.55f).coerceIn(3f, 18f)
         data.forEachIndexed { index, bar ->
             val color = bar.candleColor()
-            val cx = layout.slotCenterX(index)
+            val cx = slots.slotCenterX(index)
 
             val highY = layout.priceToY(bar.high)
             val lowY = layout.priceToY(bar.low)
@@ -406,7 +504,7 @@ private fun CandlestickCanvas(
                 color = color,
                 start = Offset(cx, highY),
                 end = Offset(cx, lowY),
-                strokeWidth = 2f,
+                strokeWidth = wickStroke,
             )
 
             val openY = layout.priceToY(bar.open)
@@ -419,37 +517,20 @@ private fun CandlestickCanvas(
                 topLeft = Offset(cx - bodyWidth / 2f, top),
                 size = Size(bodyWidth, bodyH),
             )
-
-            val volTop = layout.volumeBarTop(bar.volume)
-            val volH = layout.volumePlotBottom - volTop
-            drawRect(
-                color = color,
-                topLeft = Offset(cx - bodyWidth / 2f, volTop),
-                size = Size(bodyWidth, volH.coerceAtLeast(1f)),
-            )
         }
 
-        // Selected day crosshair (vertical through price + volume; horizontal at close) + outline
         if (selectedIndex in data.indices) {
             val bar = data[selectedIndex]
-            val cx = layout.slotCenterX(selectedIndex)
+            val cx = slots.slotCenterX(selectedIndex)
             val openY = layout.priceToY(bar.open)
             val closeY = layout.priceToY(bar.close)
 
-            // Vertical: day slot (price pane + volume pane)
             drawLine(
                 color = ChartColors.Crosshair,
                 start = Offset(cx, layout.pricePlotTop),
                 end = Offset(cx, layout.pricePlotBottom),
                 strokeWidth = 1f,
             )
-            drawLine(
-                color = ChartColors.Crosshair,
-                start = Offset(cx, layout.volumePlotTop),
-                end = Offset(cx, layout.volumePlotBottom),
-                strokeWidth = 1f,
-            )
-            // Horizontal: selected day's close — full width to read against left price scale
             drawLine(
                 color = ChartColors.Crosshair,
                 start = Offset(0f, closeY),
@@ -467,26 +548,118 @@ private fun CandlestickCanvas(
                 style = Stroke(width = 1.5f),
             )
         }
+    }
+}
 
-        // Sparse date labels
+// ─── Volume canvas ───────────────────────────────────────────────────────────
+
+@Composable
+private fun VolumeCanvas(
+    data: List<DailyOhlcv>,
+    selectedIndex: Int,
+    onSelectIndex: (Int) -> Unit,
+    canvasModifier: Modifier = Modifier,
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(
+        color = ChartColors.AxisText,
+        fontSize = 10.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+    val volumeMax = remember(data) { VolumePaneLayout.volumeMaxOf(data) }
+
+    Canvas(
+        modifier = canvasModifier
+            .fillMaxSize()
+            .pointerInput(data) {
+                detectTapGestures { offset ->
+                    val slots = SlotGeometry(size.width.toFloat(), data.size)
+                    slots.indexAtX(offset.x)?.let(onSelectIndex)
+                }
+            },
+    ) {
+        val layout = VolumePaneLayout(
+            canvasWidth = size.width,
+            canvasHeight = size.height,
+            barCount = data.size,
+            volumeMax = volumeMax,
+        )
+        val slots = layout.slots
+        val bodyWidth = slots.bodyWidth()
+
+        // Top edge line (under nav bar)
+        drawLine(
+            color = ChartColors.Grid,
+            start = Offset(slots.chartLeft, layout.volumeTop),
+            end = Offset(slots.chartRight, layout.volumeTop),
+            strokeWidth = 1f,
+        )
+
+        val volSteps = 3
+        for (i in 0..volSteps) {
+            val ratio = i.toFloat() / volSteps
+            val y = layout.volumePlotBottom - ratio * layout.volumePlotHeight
+            drawLine(
+                color = ChartColors.Grid,
+                start = Offset(slots.chartLeft, y),
+                end = Offset(slots.chartRight, y),
+                strokeWidth = 1f,
+            )
+            if (i > 0) {
+                val vol = (layout.volumeMax * ratio).toLong()
+                val label = formatVolume(vol)
+                val measured = textMeasurer.measure(label, labelStyle)
+                val labelY = (y - measured.size.height / 2f)
+                    .coerceIn(layout.volumePlotTop, layout.volumePlotBottom - measured.size.height)
+                drawText(
+                    textLayoutResult = measured,
+                    topLeft = Offset(
+                        x = (slots.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
+                        y = labelY,
+                    ),
+                )
+            }
+        }
+
+        data.forEachIndexed { index, bar ->
+            val color = bar.candleColor()
+            val cx = slots.slotCenterX(index)
+            val volTop = layout.volumeBarTop(bar.volume)
+            val volH = layout.volumePlotBottom - volTop
+            drawRect(
+                color = color,
+                topLeft = Offset(cx - bodyWidth / 2f, volTop),
+                size = Size(bodyWidth, volH.coerceAtLeast(1f)),
+            )
+        }
+
+        if (selectedIndex in data.indices) {
+            val cx = slots.slotCenterX(selectedIndex)
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(cx, layout.volumePlotTop),
+                end = Offset(cx, layout.volumePlotBottom),
+                strokeWidth = 1f,
+            )
+        }
+
         val labelEvery = maxOf(1, data.size / 6)
         data.forEachIndexed { index, bar ->
             if (index % labelEvery == 0 || index == data.lastIndex) {
                 val label = formatAxisDate(bar.date)
                 val measured = textMeasurer.measure(label, labelStyle)
-                val cx = layout.slotCenterX(index)
+                val cx = slots.slotCenterX(index)
                 drawText(
                     textLayoutResult = measured,
                     topLeft = Offset(
                         x = (cx - measured.size.width / 2f)
-                            .coerceIn(layout.chartLeft, layout.chartRight - measured.size.width),
+                            .coerceIn(slots.chartLeft, slots.chartRight - measured.size.width),
                         y = layout.volumeBottom + 4f,
                     ),
                 )
             }
         }
 
-        // Selected volume caption sits in the dedicated caption strip (above volume bars)
         val selected = data.getOrNull(selectedIndex)
         if (selected != null) {
             val title = "成交量 ${selected.volume}"
@@ -497,10 +670,9 @@ private fun CandlestickCanvas(
             drawText(
                 textLayoutResult = measured,
                 topLeft = Offset(
-                    x = layout.chartLeft + 4f,
+                    x = slots.chartLeft + 4f,
                     y = layout.volumeTop +
-                        ((layout.volumeCaptionHeight - measured.size.height) / 2f)
-                            .coerceAtLeast(0f),
+                        ((18f - measured.size.height) / 2f).coerceAtLeast(0f),
                 ),
             )
         }

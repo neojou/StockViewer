@@ -152,8 +152,8 @@ Dependency rules (enforced by convention today): [`docs/modules/boundaries.md`](
 | StockViewer menu assembly | `StockViewer.kt` | Product menu tree (Database / K Chart) as `List<MyTopMenuItem>` |
 | `OhlcvInputDialog` | presentation/form | Form fields, validate, `upsert` |
 | `OhlcvDataTableDialog` | presentation/list | `getRecent(100)`, six-column table |
-| `CandlestickChart` | presentation/chart | 30-day candles + volume + crosshair; **currently** observes repository internally |
-| `ChartLayout` | presentation/chart | Geometry, ticks, colors, formatting (no I/O) |
+| `CandlestickChart` | presentation/chart | Viewport candles + volume + nav (`<+->`) + crosshair; **currently** observes repository internally |
+| `ChartLayout` / viewport | presentation/chart | Geometry, ticks, colors, `ChartViewport` pan/zoom (no I/O) |
 | `OhlcvValidator` | domain/validation | Parse/validate OHLC rules |
 | `OhlcvRepository` | domain/repository | Persistence contract (`Flow` + suspend `Result`) |
 | `OhlcvRepositoryImpl` | data/repository | SQLDelight-backed impl |
@@ -225,11 +225,14 @@ Toolbar Database → View
 ```text
 Toolbar K Chart → MainContent.KChart
   → CandlestickChart(repository)
-  → observeAll() → sort by date → takeLast(30)
-  → default selection = rightmost bar
+  → observeAll() → sort by date (full series)
+  → ChartViewport: default last min(60, n) bars; pan/zoom via < + - >
+  → Y scales recompute from visible window only
+  → default selection = rightmost visible bar
   → click → update header + crosshair
        vertical @ day slot (price + volume panes)
-       horizontal @ close price (full canvas width)
+       horizontal @ close price (price pane full width)
+  → nav bar between price and volume canvases
 ```
 
 **Architectural intent (evolution, not current code):** chart should accept `List<DailyOhlcv>` (+ selection) so Canvas stays free of I/O. See §10.

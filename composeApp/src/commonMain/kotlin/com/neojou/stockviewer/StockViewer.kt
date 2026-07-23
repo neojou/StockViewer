@@ -49,7 +49,7 @@ private enum class MainContent {
     /** Default placeholder until a feature is chosen. */
     Home,
 
-    /** Daily candlestick + volume chart (recent 30 days). */
+    /** Daily candlestick + volume chart (viewport pan/zoom). */
     KChart,
 }
 

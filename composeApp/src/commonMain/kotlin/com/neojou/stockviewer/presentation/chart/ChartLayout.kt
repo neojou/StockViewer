@@ -1,8 +1,6 @@
 package com.neojou.stockviewer.presentation.chart
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import com.neojou.stockviewer.domain.model.DailyOhlcv
 import kotlin.math.abs
@@ -24,91 +22,32 @@ object ChartColors {
     val AxisText = Color(0xFFB0B0B0)
     val HeaderText = Color(0xFFE8E8E8)
     val Crosshair = Color(0x66FFFFFF)
+    val NavBarBg = Color(0xFF1A1A1A)
+    val NavBarBorder = Color(0xFF2A2A2A)
+    val NavButtonEnabled = Color(0xFFE8E8E8)
+    val NavButtonDisabled = Color(0xFF555555)
+    val NavButtonPress = Color(0xFF2E2E2E)
+}
+
+/** Shared horizontal metrics so price / volume panes stay slot-aligned. */
+object ChartMetrics {
+    const val LEFT_AXIS_WIDTH = 56f
+    const val RIGHT_PADDING = 12f
+    /** Body fills ~72% of slot (TradingView-like density). */
+    const val BODY_SLOT_RATIO = 0.72f
+    const val BODY_MIN_PX = 2f
+    const val BODY_MAX_PX = 22f
 }
 
 /**
- * Geometric layout for price pane + volume pane inside a single Canvas.
+ * Price-scale range derived from visible OHLCV (nice ticks above high / below low).
  */
-data class ChartLayout(
-    val canvasWidth: Float,
-    val canvasHeight: Float,
-    val barCount: Int,
+data class PriceScale(
     val priceMin: Double,
     val priceMax: Double,
-    /** Nice step used for left price scale (same grid as [priceMin]/[priceMax]). */
     val priceStep: Double,
-    val volumeMax: Long,
 ) {
-    val leftAxisWidth: Float = 56f
-    val rightPadding: Float = 12f
-    val topPadding: Float = 10f
-    val bottomDateHeight: Float = 24f
-    /**
-     * Clear band between price pane and volume pane (separator line sits in the middle).
-     * Large enough so bottom price-tick labels never overlap volume.
-     */
-    val separatorHeight: Float = 32f
-    /** Fraction of remaining height (after separator) used by the volume pane. */
-    val volumePaneRatio: Float = 0.26f
-    /**
-     * Vertical inset inside the price pane so top/bottom tick labels
-     * (drawn centered on the tick Y) stay fully inside the price area.
-     */
-    val priceLabelInset: Float = 11f
-    /** Space at top of volume pane for the "成交量 …" caption. */
-    val volumeCaptionHeight: Float = 18f
-
-    val chartLeft: Float = leftAxisWidth
-    val chartRight: Float = canvasWidth - rightPadding
-    val chartWidth: Float = (chartRight - chartLeft).coerceAtLeast(1f)
-
-    val usableHeight: Float =
-        (canvasHeight - topPadding - bottomDateHeight - separatorHeight).coerceAtLeast(1f)
-    val volumePaneHeight: Float = usableHeight * volumePaneRatio
-    val pricePaneHeight: Float = usableHeight - volumePaneHeight
-
-    val priceTop: Float = topPadding
-    val priceBottom: Float = priceTop + pricePaneHeight
-    /** Center Y of the separator band between price and volume. */
-    val separatorY: Float = priceBottom + separatorHeight / 2f
-    val volumeTop: Float = priceBottom + separatorHeight
-    val volumeBottom: Float = volumeTop + volumePaneHeight
-
-    /** Candle plot area (inside price pane, clear of tick-label overflow). */
-    val pricePlotTop: Float = priceTop + priceLabelInset
-    val pricePlotBottom: Float = priceBottom - priceLabelInset
-    val pricePlotHeight: Float = (pricePlotBottom - pricePlotTop).coerceAtLeast(1f)
-
-    /** Volume bars plot area (below caption). */
-    val volumePlotTop: Float = volumeTop + volumeCaptionHeight
-    val volumePlotBottom: Float = volumeBottom
-    val volumePlotHeight: Float = (volumePlotBottom - volumePlotTop).coerceAtLeast(1f)
-
-    val priceRect: Rect = Rect(
-        offset = Offset(chartLeft, priceTop),
-        size = Size(chartWidth, pricePaneHeight),
-    )
-    val volumeRect: Rect = Rect(
-        offset = Offset(chartLeft, volumeTop),
-        size = Size(chartWidth, volumePaneHeight),
-    )
-
-    val slotWidth: Float = if (barCount > 0) chartWidth / barCount else chartWidth
-
-    fun slotCenterX(index: Int): Float =
-        chartLeft + slotWidth * index + slotWidth / 2f
-
-    fun priceToY(price: Double): Float {
-        val range = (priceMax - priceMin).takeIf { it > 0 } ?: 1.0
-        val ratio = ((price - priceMin) / range).toFloat()
-        return pricePlotBottom - ratio * pricePlotHeight
-    }
-
-    /**
-     * Left price scale ticks from [priceMin] (first below data low)
-     * to [priceMax] (first above data high), stepping by [priceStep].
-     */
-    fun priceTicks(): List<Double> {
+    fun ticks(): List<Double> {
         if (priceMax <= priceMin) return listOf(priceMin)
         val step = priceStep.takeIf { it > 0.0 } ?: return listOf(priceMin, priceMax)
         val ticks = mutableListOf<Double>()
@@ -119,12 +58,120 @@ data class ChartLayout(
             v += step
             guard++
         }
-        // Ensure top bound is present (float drift).
         if (ticks.isEmpty() || abs(ticks.last() - priceMax) > step * 0.01) {
             ticks += priceMax
         }
         return ticks
     }
+
+    companion object {
+        fun from(data: List<DailyOhlcv>): PriceScale {
+            val minLow = data.minOfOrNull { it.low } ?: 0.0
+            val maxHigh = data.maxOfOrNull { it.high } ?: 1.0
+            val step = niceStep(minLow, maxOf(maxHigh, minLow + 1e-9), targetCount = 7)
+
+            var topTick = floor(maxHigh / step) * step + step
+            if (topTick <= maxHigh) topTick += step
+
+            var bottomTick = ceil(minLow / step) * step - step
+            if (bottomTick >= minLow) bottomTick -= step
+            if (bottomTick < 0.0 && minLow > 0.0) {
+                bottomTick = 0.0
+            }
+            if (bottomTick >= minLow) {
+                bottomTick = minLow - step
+            }
+
+            return PriceScale(
+                priceMin = bottomTick,
+                priceMax = maxOf(topTick, bottomTick + step),
+                priceStep = step,
+            )
+        }
+    }
+}
+
+/**
+ * Horizontal slot geometry shared by price and volume canvases.
+ */
+data class SlotGeometry(
+    val canvasWidth: Float,
+    val barCount: Int,
+) {
+    val chartLeft: Float = ChartMetrics.LEFT_AXIS_WIDTH
+    val chartRight: Float = canvasWidth - ChartMetrics.RIGHT_PADDING
+    val chartWidth: Float = (chartRight - chartLeft).coerceAtLeast(1f)
+    val slotWidth: Float = if (barCount > 0) chartWidth / barCount else chartWidth
+
+    fun slotCenterX(index: Int): Float =
+        chartLeft + slotWidth * index + slotWidth / 2f
+
+    fun bodyWidth(): Float =
+        (slotWidth * ChartMetrics.BODY_SLOT_RATIO)
+            .coerceIn(ChartMetrics.BODY_MIN_PX, ChartMetrics.BODY_MAX_PX)
+
+    fun wickStroke(): Float =
+        (bodyWidth() * 0.12f).coerceAtLeast(1f)
+
+    fun indexAtX(x: Float): Int? {
+        if (barCount <= 0) return null
+        if (x < chartLeft || x > chartRight) return null
+        val idx = ((x - chartLeft) / slotWidth).toInt()
+        return idx.coerceIn(0, barCount - 1)
+    }
+}
+
+/**
+ * Price pane geometry (full canvas height is the price area).
+ */
+data class PricePaneLayout(
+    val canvasWidth: Float,
+    val canvasHeight: Float,
+    val barCount: Int,
+    val scale: PriceScale,
+) {
+    private val topPadding: Float = 10f
+    private val bottomPadding: Float = 6f
+    private val priceLabelInset: Float = 11f
+
+    val slots: SlotGeometry = SlotGeometry(canvasWidth, barCount)
+
+    val priceTop: Float = topPadding
+    val priceBottom: Float = (canvasHeight - bottomPadding).coerceAtLeast(priceTop + 1f)
+    val pricePlotTop: Float = priceTop + priceLabelInset
+    val pricePlotBottom: Float = priceBottom - priceLabelInset
+    val pricePlotHeight: Float = (pricePlotBottom - pricePlotTop).coerceAtLeast(1f)
+
+    fun priceToY(price: Double): Float {
+        val range = (scale.priceMax - scale.priceMin).takeIf { it > 0 } ?: 1.0
+        val ratio = ((price - scale.priceMin) / range).toFloat()
+        return pricePlotBottom - ratio * pricePlotHeight
+    }
+
+    fun priceTicks(): List<Double> = scale.ticks()
+}
+
+/**
+ * Volume pane geometry (caption + bars + bottom date labels).
+ */
+data class VolumePaneLayout(
+    val canvasWidth: Float,
+    val canvasHeight: Float,
+    val barCount: Int,
+    val volumeMax: Long,
+) {
+    private val bottomDateHeight: Float = 24f
+    private val volumeCaptionHeight: Float = 18f
+    private val topEdge: Float = 2f
+
+    val slots: SlotGeometry = SlotGeometry(canvasWidth, barCount)
+
+    val volumeTop: Float = topEdge
+    val volumeBottom: Float =
+        (canvasHeight - bottomDateHeight).coerceAtLeast(volumeTop + volumeCaptionHeight + 1f)
+    val volumePlotTop: Float = volumeTop + volumeCaptionHeight
+    val volumePlotBottom: Float = volumeBottom
+    val volumePlotHeight: Float = (volumePlotBottom - volumePlotTop).coerceAtLeast(1f)
 
     fun volumeToHeight(volume: Long): Float {
         val maxV = volumeMax.takeIf { it > 0 } ?: 1L
@@ -134,56 +181,167 @@ data class ChartLayout(
     fun volumeBarTop(volume: Long): Float =
         volumePlotBottom - volumeToHeight(volume)
 
-    fun indexAtX(x: Float): Int? {
-        if (barCount <= 0) return null
-        if (x < chartLeft || x > chartRight) return null
-        val idx = ((x - chartLeft) / slotWidth).toInt()
-        return idx.coerceIn(0, barCount - 1)
+    companion object {
+        fun volumeMaxOf(data: List<DailyOhlcv>): Long =
+            maxOf(data.maxOfOrNull { it.volume } ?: 0L, 1L)
+    }
+}
+
+// ─── Viewport (pan / zoom window over full series) ───────────────────────────
+
+/** Default visible bars (~3 trading months). */
+const val DEFAULT_VISIBLE_COUNT = 60
+const val MIN_VISIBLE_COUNT = 10
+
+/**
+ * Sliding window over a sorted (ascending date) OHLCV series.
+ *
+ * - [visibleCount]: desired bars in the window (clamped to series length when slicing)
+ * - [windowEnd]: inclusive right-edge index in the full series
+ * - Zoom prefers keeping [windowEnd]; if the left side runs out of bars, the window
+ *   grows to the right so the slice always has `min(visibleCount, total)` bars.
+ */
+data class ChartViewport(
+    val visibleCount: Int = DEFAULT_VISIBLE_COUNT,
+    val windowEnd: Int = -1,
+) {
+    /** Inclusive start index for a series of [total] bars. */
+    fun windowStart(total: Int): Int {
+        if (total <= 0) return 0
+        val (start, _) = resolvedRange(total)
+        return start
+    }
+
+    /** Inclusive end index after normalization for [total]. */
+    fun resolvedEnd(total: Int): Int {
+        if (total <= 0) return -1
+        return resolvedRange(total).second
+    }
+
+    /**
+     * Resolve (start, end) so the window always contains
+     * `min(visibleCount, total)` bars when possible.
+     */
+    fun resolvedRange(total: Int): Pair<Int, Int> {
+        if (total <= 0) return 0 to -1
+        val count = visibleCount.coerceIn(1, total)
+        var end = windowEnd.coerceIn(0, total - 1)
+        var start = end - count + 1
+        if (start < 0) {
+            start = 0
+            end = (count - 1).coerceAtMost(total - 1)
+        }
+        return start to end
+    }
+
+    fun slice(all: List<DailyOhlcv>): List<DailyOhlcv> {
+        if (all.isEmpty()) return emptyList()
+        val (start, end) = resolvedRange(all.size)
+        return all.subList(start, end + 1)
+    }
+
+    val canZoomIn: Boolean get() = visibleCount > MIN_VISIBLE_COUNT
+    fun canZoomOut(total: Int): Boolean = total > 0 && visibleCount < total
+    fun canPanLeft(total: Int): Boolean =
+        total > 0 && windowStart(total) > 0
+    fun canPanRight(total: Int): Boolean {
+        if (total <= 0) return false
+        val (_, end) = resolvedRange(total)
+        return end < total - 1
+    }
+
+    fun zoomIn(total: Int): ChartViewport {
+        if (!canZoomIn || total <= 0) return this
+        val step = zoomStep(visibleCount)
+        val next = (visibleCount - step).coerceAtLeast(MIN_VISIBLE_COUNT).coerceAtMost(total)
+        // Keep right edge fixed while shrinking from the left.
+        val end = resolvedEnd(total).coerceAtLeast(0)
+        return copy(visibleCount = next, windowEnd = end).normalized(total)
+    }
+
+    fun zoomOut(total: Int): ChartViewport {
+        if (!canZoomOut(total)) return this
+        val step = zoomStep(visibleCount)
+        val next = (visibleCount + step).coerceAtMost(total)
+        // Prefer fixed right edge; [normalized] extends right if left is exhausted.
+        val end = resolvedEnd(total).coerceAtLeast(0)
+        return copy(visibleCount = next, windowEnd = end).normalized(total)
+    }
+
+    fun panLeft(total: Int): ChartViewport {
+        if (!canPanLeft(total)) return this
+        val step = panStep(visibleCount)
+        val (start, end) = resolvedRange(total)
+        val count = end - start + 1
+        val newStart = (start - step).coerceAtLeast(0)
+        val newEnd = (newStart + count - 1).coerceAtMost(total - 1)
+        return copy(windowEnd = newEnd, visibleCount = count).normalized(total)
+    }
+
+    fun panRight(total: Int): ChartViewport {
+        if (!canPanRight(total)) return this
+        val step = panStep(visibleCount)
+        val (start, end) = resolvedRange(total)
+        val count = end - start + 1
+        val newEnd = (end + step).coerceAtMost(total - 1)
+        val newStart = (newEnd - count + 1).coerceAtLeast(0)
+        return copy(windowEnd = newEnd, visibleCount = newEnd - newStart + 1).normalized(total)
+    }
+
+    /** Clamp indices so slice length matches desired count. */
+    fun normalized(total: Int): ChartViewport {
+        if (total <= 0) {
+            return ChartViewport(visibleCount = DEFAULT_VISIBLE_COUNT, windowEnd = -1)
+        }
+        val count = visibleCount.coerceIn(1, total)
+        val (start, end) = copy(visibleCount = count).resolvedRange(total)
+        return ChartViewport(visibleCount = end - start + 1, windowEnd = end)
     }
 
     companion object {
-        fun from(
-            width: Float,
-            height: Float,
-            data: List<DailyOhlcv>,
-        ): ChartLayout {
-            val minLow = data.minOfOrNull { it.low } ?: 0.0
-            val maxHigh = data.maxOfOrNull { it.high } ?: 1.0
-            // Step from actual data span.
-            val spanMin = minLow
-            val spanMax = maxOf(maxHigh, minLow + 1e-9)
-            val step = niceStep(spanMin, spanMax, targetCount = 7)
-
-            // Top: first nice tick strictly greater than data high.
-            var topTick = floor(maxHigh / step) * step + step
-            if (topTick <= maxHigh) topTick += step
-
-            // Bottom: first nice tick strictly less than data low.
-            var bottomTick = ceil(minLow / step) * step - step
-            if (bottomTick >= minLow) bottomTick -= step
-            // Prices are non-negative in this app; clamp only when it remains strictly below minLow.
-            if (bottomTick < 0.0 && minLow > 0.0) {
-                bottomTick = 0.0
-                // If 0 is not strictly below minLow (minLow == 0), keep previous negative then force one step.
+        fun initial(total: Int): ChartViewport {
+            if (total <= 0) {
+                return ChartViewport(visibleCount = DEFAULT_VISIBLE_COUNT, windowEnd = -1)
             }
-            if (bottomTick >= minLow) {
-                bottomTick = minLow - step
-            }
-
-            val priceMin = bottomTick
-            val priceMax = maxOf(topTick, bottomTick + step)
-
-            val volMax = data.maxOfOrNull { it.volume } ?: 0L
-            return ChartLayout(
-                canvasWidth = width,
-                canvasHeight = height,
-                barCount = data.size,
-                priceMin = priceMin,
-                priceMax = priceMax,
-                priceStep = step,
-                volumeMax = maxOf(volMax, 1L),
-            )
+            val count = minOf(DEFAULT_VISIBLE_COUNT, total)
+            return ChartViewport(visibleCount = count, windowEnd = total - 1)
         }
+
+        /**
+         * Reconcile viewport after [all] changes.
+         * - If previously pinned to the right edge, stay on the newest bar.
+         * - Otherwise try to keep the same right-edge date; fall back to clamp.
+         */
+        fun reconcile(
+            previous: ChartViewport,
+            previousAll: List<DailyOhlcv>,
+            newAll: List<DailyOhlcv>,
+        ): ChartViewport {
+            if (newAll.isEmpty()) {
+                return ChartViewport(visibleCount = DEFAULT_VISIBLE_COUNT, windowEnd = -1)
+            }
+            val n = newAll.size
+            if (previousAll.isEmpty() || previous.windowEnd < 0) {
+                return initial(n)
+            }
+            val wasPinnedRight =
+                previous.resolvedEnd(previousAll.size) >= previousAll.lastIndex
+            val count = previous.visibleCount.coerceIn(1, n)
+            val end = if (wasPinnedRight) {
+                n - 1
+            } else {
+                val prevDate = previousAll.getOrNull(previous.resolvedEnd(previousAll.size))?.date
+                val idx = if (prevDate != null) newAll.indexOfFirst { it.date == prevDate } else -1
+                if (idx >= 0) idx else previous.windowEnd.coerceIn(0, n - 1)
+            }
+            return ChartViewport(visibleCount = count, windowEnd = end).normalized(n)
+        }
+
+        fun zoomStep(visibleCount: Int): Int =
+            maxOf(2, (visibleCount * 0.2f).toInt().coerceAtLeast(1))
+
+        fun panStep(visibleCount: Int): Int =
+            maxOf(1, visibleCount / 5)
     }
 }
 
