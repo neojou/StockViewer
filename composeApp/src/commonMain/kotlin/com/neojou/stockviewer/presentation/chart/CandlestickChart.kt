@@ -835,12 +835,21 @@ private fun VolumeCanvas(
             )
         }
 
+        // Crosshair: vertical @ day; horizontal @ selected volume bar top (reads left scale)
         if (selectedIndex in data.indices) {
+            val bar = data[selectedIndex]
             val cx = slots.slotCenterX(selectedIndex)
+            val volTopY = layout.volumeBarTop(bar.volume)
             drawLine(
                 color = ChartColors.Crosshair,
                 start = Offset(cx, layout.volumePlotTop),
                 end = Offset(cx, layout.volumePlotBottom),
+                strokeWidth = 1f,
+            )
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(0f, volTopY),
+                end = Offset(size.width, volTopY),
                 strokeWidth = 1f,
             )
         }

@@ -214,7 +214,7 @@ UI 流程：
 | 刻度上界 | 第一個 **> max(high, visible MA)** 的 nice tick |
 | 刻度下界 | 第一個 **< min(low, visible MA)** 的 nice tick |
 | 版面 | Header + 均價/Nav + 價 + 量 + KD + MACD（**日期軸在 MACD 底**） |
-| 十字線 | 縱線貫穿價／量／KD／MACD；價橫線＝收盤；KD 橫線＝K；**MACD 橫線＝DIFF** |
+| 十字線 | 縱線貫穿價／量／KD／MACD；價橫線＝收盤；**量橫線＝量柱頂**（對左量刻度）；KD 橫線＝K；MACD 橫線＝DIFF |
 | 資料注入 | **現況** Chart 內部 `observeAll()`；**演進方向** List 注入（見 ARCHITECTURE G1，勿擅自大重構除非任務要求） |
 
 ---
