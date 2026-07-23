@@ -116,7 +116,7 @@ interface OhlcvRepository {
      └─ Import  → 開啟檔案 → 確認合併 → 寫入 DB
   K Chart
      ├─ View     → MainContent.KChart（主區替換）
-     └─ Settings → ChartMaSettingsDialog（均線天數 + KD 參數）
+     └─ Settings → ChartMaSettingsDialog（均線 + KD + MACD 參數）
 ```
 
 殼層：`StockViewer`（Scaffold + 狀態）。頂部列使用通用 **`com.neojou.tools.ui.menu.MyTopMenuBar`**，由殼層組裝 `List<MyTopMenuItem>`（產品選單定義不在 tools 內）。詳見 ARCHITECTURE 導覽節。
@@ -185,7 +185,7 @@ UI 流程：
 
 ### 3. K Chart（✅）
 
-檔案：`CandlestickChart.kt` + `ChartLayout.kt` + `MovingAverage.kt` + `KdIndicator.kt` + `ChartMaSettingsDialog.kt`。
+檔案：`CandlestickChart.kt` + `ChartLayout.kt` + `MovingAverage.kt` + `KdIndicator.kt` + `MacdIndicator.kt` + `ChartMaSettingsDialog.kt`。
 
 | 規則 | 值 |
 |------|-----|
@@ -195,8 +195,8 @@ UI 流程：
 | Zoom In (`+`) | 減少可視根數，下限 **10**；錨定右緣 `windowEnd` |
 | Zoom Out (`-`) | 增加可視根數，上限 **n**；左不足時向右伸展 |
 | Pan (`<` / `>`) | 視窗左／右移，步進 `max(1, visibleCount/5)`；邊界按鈕 disabled |
-| 控制列 | 價 plot 與量 plot **之間**：`<` `+` `-` `>` +「N日」標籤 |
-| K 線密度 | body ≈ **72%** slot（價／量／KD 共用 slot 幾何） |
+| 控制列 | 均價列**右側**（價圖右上）：「N日」+ `<` `+` `-` `>` |
+| K 線密度 | body ≈ **72%** slot（價／量／KD／MACD 共用 slot 幾何） |
 | 配色 | **紅漲綠跌**（`close >= open` → 紅） |
 | Header | 2×3 格線：日期/開/低；量/高/收；開↔高、低↔收對齊 |
 | **均線 (SMA)** | 三條，預設 **5 / 10 / 20** 日；用**收盤價**簡單平均；自可計算當日起畫 |
@@ -206,11 +206,15 @@ UI 流程：
 | KD 顏色 | **K 紅**、**D 綠** |
 | KD 刻度 | 左軸固定 **0,20,40,60,80,100** + 水平格線 |
 | KD 文案列 | KD 圖**上方**：`K(n,k,d) : xxx` 紅、`D(n,k,d) : xxx` 綠；不足則 `—` |
-| Settings | **K Chart → Settings**：均線三天數 + KD `(period,k,d)`（1–100） |
+| **MACD** | KD**下方**；`DIFF = EMA(短)−EMA(長)`；預設 **(5,13,8)**；柱 = **DIFF** |
+| MACD 柱色 | DIFF **>0 紅向上**、**<0 綠向下**；0 置中 |
+| MACD 刻度 | 左軸對稱 ±scaleMax（依可視 DIFF）；0 水平居中 |
+| MACD 文案 | 圖**上方**：`DIFF (5, 13, 8) = xxx`（參數為當前設定；正紅／負綠）；不足則 `—` |
+| Settings | **K Chart → Settings**：均線 + KD + MACD（短期 < 長期；1–100） |
 | 刻度上界 | 第一個 **> max(high, visible MA)** 的 nice tick |
 | 刻度下界 | 第一個 **< min(low, visible MA)** 的 nice tick |
-| 版面 | 價 Canvas + NavBar + 量 Canvas + KD 文案 + KD Canvas（日期軸在 KD 底） |
-| 十字線 | 縱線貫穿價／量／KD 當日 slot；價區橫線＝**收盤**；KD 區橫線＝**K 值** |
+| 版面 | Header + 均價/Nav + 價 + 量 + KD + MACD（**日期軸在 MACD 底**） |
+| 十字線 | 縱線貫穿價／量／KD／MACD；價橫線＝收盤；KD 橫線＝K；**MACD 橫線＝DIFF** |
 | 資料注入 | **現況** Chart 內部 `observeAll()`；**演進方向** List 注入（見 ARCHITECTURE G1，勿擅自大重構除非任務要求） |
 
 ---

@@ -27,16 +27,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 /**
- * K Chart indicator settings: three SMA periods + KD (period, K, D).
+ * K Chart indicator settings: SMA + KD + MACD parameters.
  *
- * MA slot colors: 黃 / 紫 / 藍. KD: K 紅 / D 綠.
+ * MA: 黃 / 紫 / 藍. KD: K 紅 / D 綠. MACD DIFF 柱: 正紅 / 負綠.
  */
 @Composable
 fun ChartMaSettingsDialog(
     currentMa: MovingAverageSettings,
     currentKd: KdSettings,
+    currentMacd: MacdSettings,
     onDismiss: () -> Unit,
-    onConfirm: (MovingAverageSettings, KdSettings) -> Unit,
+    onConfirm: (MovingAverageSettings, KdSettings, MacdSettings) -> Unit,
 ) {
     var p1 by remember(currentMa) { mutableStateOf(currentMa.period1.toString()) }
     var p2 by remember(currentMa) { mutableStateOf(currentMa.period2.toString()) }
@@ -44,6 +45,9 @@ fun ChartMaSettingsDialog(
     var kdPeriod by remember(currentKd) { mutableStateOf(currentKd.period.toString()) }
     var kdK by remember(currentKd) { mutableStateOf(currentKd.k.toString()) }
     var kdD by remember(currentKd) { mutableStateOf(currentKd.d.toString()) }
+    var macdShort by remember(currentMacd) { mutableStateOf(currentMacd.shortPeriod.toString()) }
+    var macdLong by remember(currentMacd) { mutableStateOf(currentMacd.longPeriod.toString()) }
+    var macdSignal by remember(currentMacd) { mutableStateOf(currentMacd.signalPeriod.toString()) }
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -145,6 +149,54 @@ fun ChartMaSettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                Text(
+                    text = "MACD 指標",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "DIFF = EMA(短期) − EMA(長期)；預設 (5,13,8)。柱狀為 DIFF（正紅／負綠）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                MaPeriodField(
+                    label = "短期 EMA",
+                    value = macdShort,
+                    accent = MacdColors.Positive,
+                    fieldLabel = "短",
+                    onValueChange = {
+                        macdShort = it
+                        error = null
+                    },
+                )
+                MaPeriodField(
+                    label = "長期 EMA",
+                    value = macdLong,
+                    accent = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fieldLabel = "長",
+                    onValueChange = {
+                        macdLong = it
+                        error = null
+                    },
+                )
+                MaPeriodField(
+                    label = "MACD 信號",
+                    value = macdSignal,
+                    accent = MacdColors.Negative,
+                    fieldLabel = "訊",
+                    onValueChange = {
+                        macdSignal = it
+                        error = null
+                    },
+                )
+                Text(
+                    text = "MACD 參數：${MacdSettings.MIN_PARAM}–${MacdSettings.MAX_PARAM}（短期 < 長期）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
                 if (error != null) {
                     Text(
                         text = error.orEmpty(),
@@ -167,7 +219,12 @@ fun ChartMaSettingsDialog(
                             error = it.message ?: "KD 設定無效"
                             return@TextButton
                         }
-                    onConfirm(ma, kd)
+                    val macd = MacdSettings.parse(macdShort, macdLong, macdSignal)
+                        .getOrElse {
+                            error = it.message ?: "MACD 設定無效"
+                            return@TextButton
+                        }
+                    onConfirm(ma, kd, macd)
                 },
             ) {
                 Text("確定")

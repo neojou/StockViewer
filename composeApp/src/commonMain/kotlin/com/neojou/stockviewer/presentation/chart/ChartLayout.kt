@@ -196,7 +196,7 @@ data class VolumePaneLayout(
 }
 
 /**
- * KD indicator pane: fixed 0–100 scale, optional bottom date labels.
+ * KD indicator pane: fixed 0–100 scale (date axis lives on MACD pane).
  */
 data class KdPaneLayout(
     val canvasWidth: Float,
@@ -204,17 +204,17 @@ data class KdPaneLayout(
     val barCount: Int,
 ) {
     private val topPadding: Float = 4f
-    private val bottomDateHeight: Float = 24f
+    private val bottomPadding: Float = 4f
     private val labelInset: Float = 10f
 
     val slots: SlotGeometry = SlotGeometry(canvasWidth, barCount)
 
     val plotTop: Float = topPadding + labelInset
     val plotBottom: Float =
-        (canvasHeight - bottomDateHeight - labelInset).coerceAtLeast(plotTop + 1f)
+        (canvasHeight - bottomPadding - labelInset).coerceAtLeast(plotTop + 1f)
     val plotHeight: Float = (plotBottom - plotTop).coerceAtLeast(1f)
     val paneTop: Float = topPadding
-    val paneBottom: Float = (canvasHeight - bottomDateHeight).coerceAtLeast(paneTop + 1f)
+    val paneBottom: Float = (canvasHeight - bottomPadding).coerceAtLeast(paneTop + 1f)
 
     /** Fixed ticks: 0, 20, 40, 60, 80, 100. */
     val ticks: List<Double> = listOf(0.0, 20.0, 40.0, 60.0, 80.0, 100.0)
@@ -223,6 +223,46 @@ data class KdPaneLayout(
         val v = value.coerceIn(0.0, 100.0)
         val ratio = (v / 100.0).toFloat()
         return plotBottom - ratio * plotHeight
+    }
+}
+
+/**
+ * MACD DIFF histogram pane: 0 centered, symmetric ±[scaleMax], bottom date labels.
+ */
+data class MacdPaneLayout(
+    val canvasWidth: Float,
+    val canvasHeight: Float,
+    val barCount: Int,
+    /** Half-range of DIFF axis (positive); zero is vertical center of plot. */
+    val scaleMax: Double,
+) {
+    private val topPadding: Float = 4f
+    private val bottomDateHeight: Float = 24f
+    private val labelInset: Float = 10f
+
+    val slots: SlotGeometry = SlotGeometry(canvasWidth, barCount)
+
+    val paneTop: Float = topPadding
+    val paneBottom: Float =
+        (canvasHeight - bottomDateHeight).coerceAtLeast(paneTop + 1f)
+    val plotTop: Float = topPadding + labelInset
+    val plotBottom: Float =
+        (paneBottom - labelInset).coerceAtLeast(plotTop + 1f)
+    val plotHeight: Float = (plotBottom - plotTop).coerceAtLeast(1f)
+    val zeroY: Float = (plotTop + plotBottom) / 2f
+    val halfPlot: Float = plotHeight / 2f
+
+    val effectiveScaleMax: Double = scaleMax.takeIf { it > 0.0 } ?: 1.0
+
+    /** Ticks: -scaleMax, -scaleMax/2, 0, +scaleMax/2, +scaleMax */
+    fun ticks(): List<Double> {
+        val m = effectiveScaleMax
+        return listOf(-m, -m / 2.0, 0.0, m / 2.0, m)
+    }
+
+    fun valueToY(value: Double): Float {
+        val ratio = (value / effectiveScaleMax).toFloat().coerceIn(-1.2f, 1.2f)
+        return zeroY - ratio * halfPlot
     }
 }
 

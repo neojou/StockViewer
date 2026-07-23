@@ -53,6 +53,7 @@ import com.neojou.stockviewer.domain.model.DailyOhlcv
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.tools.LogLevel
 import com.neojou.tools.MyLog
+import kotlin.math.abs
 import kotlinx.coroutines.flow.map
 
 private const val TAG = "CandleChart"
@@ -61,14 +62,15 @@ private const val TAG = "CandleChart"
  * Full K-line panel inspired by [docs/k_chart.jpg]:
  * - Header: selected day's OHLCV
  * - MA strip: three SMA values for the selected day (黃 / 紫 / 藍)
+ * - MA strip (left) + nav `<+->` (right, top of price pane)
  * - Price pane: candlesticks + three SMA overlays
- * - Nav bar: `<` pan left · `+` zoom in · `-` zoom out · `>` pan right
  * - Volume pane: volume bars
  * - KD strip + KD pane (K red / D green, scale 0–100)
+ * - MACD strip + DIFF histogram (0-centered, red+/green−)
  *
  * Loads full series via [OhlcvRepository.observeAll], then shows a viewport
  * (default last [DEFAULT_VISIBLE_COUNT] sessions). Left = older, right = newer.
- * SMA / KD are computed on the **full** series, then sliced to the viewport.
+ * SMA / KD / MACD are computed on the **full** series, then sliced to the viewport.
  */
 @Composable
 fun CandlestickChart(
@@ -76,6 +78,7 @@ fun CandlestickChart(
     chartModifier: Modifier = Modifier,
     maSettings: MovingAverageSettings = MovingAverageSettings.Default,
     kdSettings: KdSettings = KdSettings.Default,
+    macdSettings: MacdSettings = MacdSettings.Default,
 ) {
     var allData by remember { mutableStateOf<List<DailyOhlcv>>(emptyList()) }
     var viewport by remember { mutableStateOf(ChartViewport.initial(0)) }
@@ -180,6 +183,9 @@ fun CandlestickChart(
                 val fullKd = remember(allData, kdSettings) {
                     computeKd(allData, kdSettings)
                 }
+                val fullMacd = remember(allData, macdSettings) {
+                    computeMacd(allData, macdSettings)
+                }
                 val (winStart, winEnd) = viewport.resolvedRange(allData.size)
                 val visibleMa = remember(fullMa, winStart, winEnd) {
                     fullMa.map { series -> sliceMaSeries(series, winStart, winEnd) }
@@ -187,21 +193,45 @@ fun CandlestickChart(
                 val visibleKd = remember(fullKd, winStart, winEnd) {
                     sliceKdSeries(fullKd, winStart, winEnd)
                 }
+                val visibleMacd = remember(fullMacd, winStart, winEnd) {
+                    sliceMacdSeries(fullMacd, winStart, winEnd)
+                }
                 val absSelected = (winStart + selIndex).coerceIn(0, allData.lastIndex)
                 val selectedMaValues = maSettings.periods.mapIndexed { slot, _ ->
                     fullMa.getOrNull(slot)?.getOrNull(absSelected)
                 }
                 val selectedK = fullKd.k.getOrNull(absSelected)
                 val selectedD = fullKd.d.getOrNull(absSelected)
+                val selectedDiff = fullMacd.diff.getOrNull(absSelected)
 
                 ChartHeader(entry = selected)
-                SelectedMaRow(
-                    settings = maSettings,
-                    values = selectedMaValues,
+
+                val total = allData.size
+                // MA labels (left) + pan/zoom controls (right) — same row, top of price pane
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 4.dp, vertical = 4.dp),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SelectedMaRow(
+                        settings = maSettings,
+                        values = selectedMaValues,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChartNavBar(
+                        visibleCount = visible.size,
+                        canPanLeft = viewport.canPanLeft(total),
+                        canPanRight = viewport.canPanRight(total),
+                        canZoomIn = viewport.canZoomIn && visible.size > MIN_VISIBLE_COUNT,
+                        canZoomOut = viewport.canZoomOut(total),
+                        onPanLeft = { applyViewport(viewport.panLeft(total)) },
+                        onPanRight = { applyViewport(viewport.panRight(total)) },
+                        onZoomIn = { applyViewport(viewport.zoomIn(total)) },
+                        onZoomOut = { applyViewport(viewport.zoomOut(total)) },
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
 
                 PriceCanvas(
@@ -211,23 +241,7 @@ fun CandlestickChart(
                     onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.48f),
-                )
-
-                val total = allData.size
-                ChartNavBar(
-                    visibleCount = visible.size,
-                    canPanLeft = viewport.canPanLeft(total),
-                    canPanRight = viewport.canPanRight(total),
-                    canZoomIn = viewport.canZoomIn && visible.size > MIN_VISIBLE_COUNT,
-                    canZoomOut = viewport.canZoomOut(total),
-                    onPanLeft = { applyViewport(viewport.panLeft(total)) },
-                    onPanRight = { applyViewport(viewport.panRight(total)) },
-                    onZoomIn = { applyViewport(viewport.zoomIn(total)) },
-                    onZoomOut = { applyViewport(viewport.zoomOut(total)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .weight(0.40f),
                 )
 
                 VolumeCanvas(
@@ -236,7 +250,7 @@ fun CandlestickChart(
                     onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.22f),
+                        .weight(0.16f),
                 )
 
                 SelectedKdRow(
@@ -255,7 +269,25 @@ fun CandlestickChart(
                     onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.22f),
+                        .weight(0.16f),
+                )
+
+                SelectedMacdRow(
+                    settings = macdSettings,
+                    diffValue = selectedDiff,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+
+                MacdCanvas(
+                    data = visible,
+                    macd = visibleMacd,
+                    selectedIndex = selIndex,
+                    onSelectIndex = { selectedVisibleIndex = it },
+                    canvasModifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.16f),
                 )
             }
         }
@@ -325,8 +357,37 @@ private fun SelectedKdRow(
     }
 }
 
+// ─── Selected-day MACD strip (above MACD pane) ───────────────────────────────
+
+@Composable
+private fun SelectedMacdRow(
+    settings: MacdSettings,
+    diffValue: Double?,
+    modifier: Modifier = Modifier,
+) {
+    val color = when {
+        diffValue == null -> ChartColors.HeaderText
+        diffValue > 0 -> MacdColors.Positive
+        diffValue < 0 -> MacdColors.Negative
+        else -> ChartColors.HeaderText
+    }
+    val valueText = diffValue?.let { formatDiff(it) } ?: "—"
+    Text(
+        text = "DIFF ${settings.paramLabel()} = $valueText",
+        modifier = modifier,
+        color = color,
+        style = MaterialTheme.typography.bodyMedium,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+    )
+}
+
 // ─── Nav bar: < + - > ────────────────────────────────────────────────────────
 
+/**
+ * Compact pan/zoom control: sits on the MA row, right-aligned (price pane top-right).
+ */
 @Composable
 private fun ChartNavBar(
     visibleCount: Int,
@@ -341,16 +402,16 @@ private fun ChartNavBar(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.height(36.dp),
+        modifier = modifier.height(32.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.End,
     ) {
         Text(
             text = "${visibleCount}日",
             color = ChartColors.AxisText,
             style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(end = 12.dp),
+            modifier = Modifier.padding(end = 8.dp),
         )
 
         Row(
@@ -907,8 +968,115 @@ private fun KdCanvas(
                 )
             }
         }
+    }
+}
 
-        // Date labels (moved from volume pane)
+// ─── MACD (DIFF histogram) canvas ────────────────────────────────────────────
+
+@Composable
+private fun MacdCanvas(
+    data: List<DailyOhlcv>,
+    macd: MacdSeries,
+    selectedIndex: Int,
+    onSelectIndex: (Int) -> Unit,
+    canvasModifier: Modifier = Modifier,
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(
+        color = ChartColors.AxisText,
+        fontSize = 10.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+    val scaleMax = remember(macd.diff) { macdScaleMax(macd.diff) }
+
+    Canvas(
+        modifier = canvasModifier
+            .fillMaxSize()
+            .pointerInput(data) {
+                detectTapGestures { offset ->
+                    val slots = SlotGeometry(size.width.toFloat(), data.size)
+                    slots.indexAtX(offset.x)?.let(onSelectIndex)
+                }
+            },
+    ) {
+        val layout = MacdPaneLayout(
+            canvasWidth = size.width,
+            canvasHeight = size.height,
+            barCount = data.size,
+            scaleMax = scaleMax,
+        )
+        val slots = layout.slots
+        val bodyWidth = slots.bodyWidth()
+
+        // Grid + left DIFF scale (0 centered)
+        for (tick in layout.ticks()) {
+            val y = layout.valueToY(tick)
+            val isZero = abs(tick) < 1e-12
+            drawLine(
+                color = if (isZero) {
+                    ChartColors.HeaderText.copy(alpha = 0.40f)
+                } else {
+                    ChartColors.Grid
+                },
+                start = Offset(slots.chartLeft, y),
+                end = Offset(slots.chartRight, y),
+                strokeWidth = if (isZero) 1.5f else 1f,
+            )
+            val label = formatDiff(tick)
+            val measured = textMeasurer.measure(label, labelStyle)
+            val labelY = (y - measured.size.height / 2f)
+                .coerceIn(layout.paneTop, layout.paneBottom - measured.size.height)
+            drawText(
+                textLayoutResult = measured,
+                topLeft = Offset(
+                    x = (slots.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
+                    y = labelY,
+                ),
+            )
+        }
+
+        // DIFF bars: + red up from 0, − green down from 0
+        macd.diff.forEachIndexed { index, diff ->
+            if (diff == null) return@forEachIndexed
+            val cx = slots.slotCenterX(index)
+            val yDiff = layout.valueToY(diff)
+            val top = minOf(layout.zeroY, yDiff)
+            val bottom = maxOf(layout.zeroY, yDiff)
+            val h = (bottom - top).coerceAtLeast(1f)
+            val color = when {
+                diff > 0 -> MacdColors.Positive
+                diff < 0 -> MacdColors.Negative
+                else -> ChartColors.AxisText
+            }
+            drawRect(
+                color = color,
+                topLeft = Offset(cx - bodyWidth / 2f, top),
+                size = Size(bodyWidth, h),
+            )
+        }
+
+        // Crosshair: vertical @ day; horizontal @ DIFF
+        if (selectedIndex in data.indices) {
+            val cx = slots.slotCenterX(selectedIndex)
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(cx, layout.plotTop),
+                end = Offset(cx, layout.plotBottom),
+                strokeWidth = 1f,
+            )
+            val dAtSel = macd.diff.getOrNull(selectedIndex)
+            if (dAtSel != null) {
+                val dy = layout.valueToY(dAtSel)
+                drawLine(
+                    color = ChartColors.Crosshair,
+                    start = Offset(0f, dy),
+                    end = Offset(size.width, dy),
+                    strokeWidth = 1f,
+                )
+            }
+        }
+
+        // Date labels (bottom of chart stack)
         val labelEvery = maxOf(1, data.size / 6)
         data.forEachIndexed { index, bar ->
             if (index % labelEvery == 0 || index == data.lastIndex) {
