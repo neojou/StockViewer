@@ -60,17 +60,20 @@ private const val TAG = "CandleChart"
 /**
  * Full K-line panel inspired by [docs/k_chart.jpg]:
  * - Header: selected day's OHLCV
- * - Price pane: candlesticks (red up / green down)
+ * - MA strip: three SMA values for the selected day (黃 / 紫 / 藍)
+ * - Price pane: candlesticks + three SMA overlays
  * - Nav bar: `<` pan left · `+` zoom in · `-` zoom out · `>` pan right
  * - Volume pane: volume bars + date axis
  *
  * Loads full series via [OhlcvRepository.observeAll], then shows a viewport
  * (default last [DEFAULT_VISIBLE_COUNT] sessions). Left = older, right = newer.
+ * SMAs are computed on the **full** series (close), then sliced to the viewport.
  */
 @Composable
 fun CandlestickChart(
     repository: OhlcvRepository,
     chartModifier: Modifier = Modifier,
+    maSettings: MovingAverageSettings = MovingAverageSettings.Default,
 ) {
     var allData by remember { mutableStateOf<List<DailyOhlcv>>(emptyList()) }
     var viewport by remember { mutableStateOf(ChartViewport.initial(0)) }
@@ -169,12 +172,32 @@ fun CandlestickChart(
                     ?: return@Column
                 val selIndex = selectedVisibleIndex.coerceIn(0, visible.lastIndex)
 
+                val fullMa = remember(allData, maSettings) {
+                    computeMovingAverages(allData, maSettings)
+                }
+                val (winStart, winEnd) = viewport.resolvedRange(allData.size)
+                val visibleMa = remember(fullMa, winStart, winEnd) {
+                    fullMa.map { series -> sliceMaSeries(series, winStart, winEnd) }
+                }
+                val absSelected = (winStart + selIndex).coerceIn(0, allData.lastIndex)
+                val selectedMaValues = maSettings.periods.mapIndexed { slot, _ ->
+                    fullMa.getOrNull(slot)?.getOrNull(absSelected)
+                }
+
                 ChartHeader(entry = selected)
-                Spacer(modifier = Modifier.height(6.dp))
+                SelectedMaRow(
+                    settings = maSettings,
+                    values = selectedMaValues,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
 
                 PriceCanvas(
                     data = visible,
                     selectedIndex = selIndex,
+                    maSeries = visibleMa,
                     onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
@@ -206,6 +229,35 @@ fun CandlestickChart(
                         .weight(0.28f),
                 )
             }
+        }
+    }
+}
+
+// ─── Selected-day MA strip (between OHLCV header and price pane) ─────────────
+
+@Composable
+private fun SelectedMaRow(
+    settings: MovingAverageSettings,
+    values: List<Double?>,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        settings.periods.forEachIndexed { slot, period ->
+            val color = MaColors.colorForSlot(slot)
+            val raw = values.getOrNull(slot)
+            val text = if (raw != null) formatPrice(raw) else "—"
+            Text(
+                text = "均價 $period : $text",
+                color = color,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -442,6 +494,7 @@ private val LABEL_WIDTH = 18.dp
 private fun PriceCanvas(
     data: List<DailyOhlcv>,
     selectedIndex: Int,
+    maSeries: List<List<Double?>>,
     onSelectIndex: (Int) -> Unit,
     canvasModifier: Modifier = Modifier,
 ) {
@@ -451,7 +504,9 @@ private fun PriceCanvas(
         fontSize = 10.sp,
         fontFamily = FontFamily.Monospace,
     )
-    val scale = remember(data) { PriceScale.from(data) }
+    val scale = remember(data, maSeries) {
+        PriceScale.from(data, extraValues = maValuesForScale(maSeries))
+    }
 
     Canvas(
         modifier = canvasModifier
@@ -517,6 +572,29 @@ private fun PriceCanvas(
                 topLeft = Offset(cx - bodyWidth / 2f, top),
                 size = Size(bodyWidth, bodyH),
             )
+        }
+
+        // SMA overlays (after candles so lines sit on top)
+        maSeries.forEachIndexed { slot, series ->
+            val color = MaColors.colorForSlot(slot)
+            var prev: Offset? = null
+            series.forEachIndexed { index, value ->
+                if (value == null) {
+                    prev = null
+                    return@forEachIndexed
+                }
+                val pt = Offset(slots.slotCenterX(index), layout.priceToY(value))
+                val p = prev
+                if (p != null) {
+                    drawLine(
+                        color = color,
+                        start = p,
+                        end = pt,
+                        strokeWidth = 1.75f,
+                    )
+                }
+                prev = pt
+            }
         }
 
         if (selectedIndex in data.indices) {

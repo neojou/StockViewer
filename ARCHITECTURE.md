@@ -152,8 +152,8 @@ Dependency rules (enforced by convention today): [`docs/modules/boundaries.md`](
 | StockViewer menu assembly | `StockViewer.kt` | Product menu tree (Database / K Chart) as `List<MyTopMenuItem>` |
 | `OhlcvInputDialog` | presentation/form | Form fields, validate, `upsert` |
 | `OhlcvDataTableDialog` | presentation/list | `getRecent(100)`, six-column table |
-| `CandlestickChart` | presentation/chart | Viewport candles + volume + nav (`<+->`) + crosshair; **currently** observes repository internally |
-| `ChartLayout` / viewport | presentation/chart | Geometry, ticks, colors, `ChartViewport` pan/zoom (no I/O) |
+| `CandlestickChart` | presentation/chart | Viewport candles + SMA overlays + volume + nav (`<+->`) + crosshair; **currently** observes repository internally |
+| `ChartLayout` / viewport / MA | presentation/chart | Geometry, ticks, `ChartViewport`, SMA (close) + settings dialog (no I/O) |
 | `OhlcvValidator` | domain/validation | Parse/validate OHLC rules |
 | `OhlcvRepository` | domain/repository | Persistence contract (`Flow` + suspend `Result`) |
 | `OhlcvRepositoryImpl` | data/repository | SQLDelight-backed impl |
@@ -223,16 +223,18 @@ Toolbar Database → View
 ### 7.3 K Chart (read stream + selection)
 
 ```text
-Toolbar K Chart → MainContent.KChart
-  → CandlestickChart(repository)
+Toolbar K Chart → View → MainContent.KChart
+  → CandlestickChart(repository, maSettings)
   → observeAll() → sort by date (full series)
+  → SMA(close) on full series for periods in maSettings (default 5/10/20)
   → ChartViewport: default last min(60, n) bars; pan/zoom via < + - >
-  → Y scales recompute from visible window only
+  → Y scales from visible OHLC + visible MA values
   → default selection = rightmost visible bar
-  → click → update header + crosshair
-       vertical @ day slot (price + volume panes)
-       horizontal @ close price (price pane full width)
-  → nav bar between price and volume canvases
+  → header OHLCV + MA strip (selected day) + price (candles+MA) + nav + volume
+  → click → update header + MA strip + crosshair
+
+Toolbar K Chart → Settings
+  → ChartMaSettingsDialog → update maSettings in StockViewer shell state
 ```
 
 **Architectural intent (evolution, not current code):** chart should accept `List<DailyOhlcv>` (+ selection) so Canvas stays free of I/O. See §10.

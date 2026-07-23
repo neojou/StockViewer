@@ -65,21 +65,29 @@ data class PriceScale(
     }
 
     companion object {
-        fun from(data: List<DailyOhlcv>): PriceScale {
+        /**
+         * @param extraValues optional values (e.g. visible MA points) included in the span
+         * so overlay lines stay on-scale when they use history outside the OHLC window.
+         */
+        fun from(data: List<DailyOhlcv>, extraValues: List<Double> = emptyList()): PriceScale {
             val minLow = data.minOfOrNull { it.low } ?: 0.0
             val maxHigh = data.maxOfOrNull { it.high } ?: 1.0
-            val step = niceStep(minLow, maxOf(maxHigh, minLow + 1e-9), targetCount = 7)
+            val minExtra = extraValues.minOrNull()
+            val maxExtra = extraValues.maxOrNull()
+            val spanMin = if (minExtra != null) minOf(minLow, minExtra) else minLow
+            val spanMax = if (maxExtra != null) maxOf(maxHigh, maxExtra) else maxHigh
+            val step = niceStep(spanMin, maxOf(spanMax, spanMin + 1e-9), targetCount = 7)
 
-            var topTick = floor(maxHigh / step) * step + step
-            if (topTick <= maxHigh) topTick += step
+            var topTick = floor(spanMax / step) * step + step
+            if (topTick <= spanMax) topTick += step
 
-            var bottomTick = ceil(minLow / step) * step - step
-            if (bottomTick >= minLow) bottomTick -= step
-            if (bottomTick < 0.0 && minLow > 0.0) {
+            var bottomTick = ceil(spanMin / step) * step - step
+            if (bottomTick >= spanMin) bottomTick -= step
+            if (bottomTick < 0.0 && spanMin > 0.0) {
                 bottomTick = 0.0
             }
-            if (bottomTick >= minLow) {
-                bottomTick = minLow - step
+            if (bottomTick >= spanMin) {
+                bottomTick = spanMin - step
             }
 
             return PriceScale(

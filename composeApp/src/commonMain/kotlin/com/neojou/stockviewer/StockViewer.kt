@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import com.neojou.stockviewer.di.AppContainer
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.stockviewer.presentation.chart.CandlestickChart
+import com.neojou.stockviewer.presentation.chart.ChartMaSettingsDialog
+import com.neojou.stockviewer.presentation.chart.MovingAverageSettings
 import com.neojou.stockviewer.domain.export.OhlcvExportFormat
 import com.neojou.stockviewer.presentation.export.OhlcvExportFormatDialog
 import com.neojou.stockviewer.presentation.export.OhlcvExportResult
@@ -58,15 +60,17 @@ private enum class MainContent {
  *
  * Hosts a product-configured [MyTopMenuBar] and content area.
  * - Database → Input / View / Export / Import
- * - K Chart shows [CandlestickChart] in the main content area
+ * - K Chart → View / Settings（均線天數）
  */
 @Composable
 fun StockViewer() {
     var showInputDialog by remember { mutableStateOf(false) }
     var showViewDialog by remember { mutableStateOf(false) }
     var showExportFormatDialog by remember { mutableStateOf(false) }
+    var showMaSettingsDialog by remember { mutableStateOf(false) }
     var importPreview by remember { mutableStateOf<OhlcvImportPreview?>(null) }
     var mainContent by remember { mutableStateOf(MainContent.Home) }
+    var maSettings by remember { mutableStateOf(MovingAverageSettings.Default) }
     var repository by remember { mutableStateOf<OhlcvRepository?>(null) }
     var repositoryError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -173,12 +177,26 @@ fun StockViewer() {
         MyTopMenuItem(
             id = "kchart",
             label = "K Chart",
-            onClick = {
-                requireRepository {
-                    mainContent = MainContent.KChart
-                    MyLog.add(TAG, "Show K Chart", LogLevel.DEBUG)
-                }
-            },
+            children = listOf(
+                MyTopMenuItem(
+                    id = "kchart.view",
+                    label = "View",
+                    onClick = {
+                        requireRepository {
+                            mainContent = MainContent.KChart
+                            MyLog.add(TAG, "K Chart > View", LogLevel.DEBUG)
+                        }
+                    },
+                ),
+                MyTopMenuItem(
+                    id = "kchart.settings",
+                    label = "Settings",
+                    onClick = {
+                        MyLog.add(TAG, "K Chart > Settings", LogLevel.DEBUG)
+                        showMaSettingsDialog = true
+                    },
+                ),
+            ),
         ),
     )
 
@@ -221,6 +239,7 @@ fun StockViewer() {
                         CandlestickChart(
                             repository = repo,
                             chartModifier = Modifier.fillMaxSize(),
+                            maSettings = maSettings,
                         )
                     } else {
                         Box(
@@ -236,6 +255,27 @@ fun StockViewer() {
                 }
             }
         }
+    }
+
+    if (showMaSettingsDialog) {
+        ChartMaSettingsDialog(
+            current = maSettings,
+            onDismiss = { showMaSettingsDialog = false },
+            onConfirm = { next ->
+                maSettings = next
+                showMaSettingsDialog = false
+                MyLog.add(
+                    TAG,
+                    "MA settings → ${next.period1}/${next.period2}/${next.period3}",
+                    LogLevel.DEBUG,
+                )
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        "均線已更新：${next.period1} / ${next.period2} / ${next.period3} 日",
+                    )
+                }
+            },
+        )
     }
 
     val repo = repository
