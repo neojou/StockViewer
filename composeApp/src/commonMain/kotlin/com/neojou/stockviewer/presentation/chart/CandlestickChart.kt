@@ -63,17 +63,19 @@ private const val TAG = "CandleChart"
  * - MA strip: three SMA values for the selected day (黃 / 紫 / 藍)
  * - Price pane: candlesticks + three SMA overlays
  * - Nav bar: `<` pan left · `+` zoom in · `-` zoom out · `>` pan right
- * - Volume pane: volume bars + date axis
+ * - Volume pane: volume bars
+ * - KD strip + KD pane (K red / D green, scale 0–100)
  *
  * Loads full series via [OhlcvRepository.observeAll], then shows a viewport
  * (default last [DEFAULT_VISIBLE_COUNT] sessions). Left = older, right = newer.
- * SMAs are computed on the **full** series (close), then sliced to the viewport.
+ * SMA / KD are computed on the **full** series, then sliced to the viewport.
  */
 @Composable
 fun CandlestickChart(
     repository: OhlcvRepository,
     chartModifier: Modifier = Modifier,
     maSettings: MovingAverageSettings = MovingAverageSettings.Default,
+    kdSettings: KdSettings = KdSettings.Default,
 ) {
     var allData by remember { mutableStateOf<List<DailyOhlcv>>(emptyList()) }
     var viewport by remember { mutableStateOf(ChartViewport.initial(0)) }
@@ -175,14 +177,22 @@ fun CandlestickChart(
                 val fullMa = remember(allData, maSettings) {
                     computeMovingAverages(allData, maSettings)
                 }
+                val fullKd = remember(allData, kdSettings) {
+                    computeKd(allData, kdSettings)
+                }
                 val (winStart, winEnd) = viewport.resolvedRange(allData.size)
                 val visibleMa = remember(fullMa, winStart, winEnd) {
                     fullMa.map { series -> sliceMaSeries(series, winStart, winEnd) }
+                }
+                val visibleKd = remember(fullKd, winStart, winEnd) {
+                    sliceKdSeries(fullKd, winStart, winEnd)
                 }
                 val absSelected = (winStart + selIndex).coerceIn(0, allData.lastIndex)
                 val selectedMaValues = maSettings.periods.mapIndexed { slot, _ ->
                     fullMa.getOrNull(slot)?.getOrNull(absSelected)
                 }
+                val selectedK = fullKd.k.getOrNull(absSelected)
+                val selectedD = fullKd.d.getOrNull(absSelected)
 
                 ChartHeader(entry = selected)
                 SelectedMaRow(
@@ -201,7 +211,7 @@ fun CandlestickChart(
                     onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.72f),
+                        .weight(0.48f),
                 )
 
                 val total = allData.size
@@ -226,7 +236,26 @@ fun CandlestickChart(
                     onSelectIndex = { selectedVisibleIndex = it },
                     canvasModifier = Modifier
                         .fillMaxWidth()
-                        .weight(0.28f),
+                        .weight(0.22f),
+                )
+
+                SelectedKdRow(
+                    settings = kdSettings,
+                    kValue = selectedK,
+                    dValue = selectedD,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+
+                KdCanvas(
+                    data = visible,
+                    kd = visibleKd,
+                    selectedIndex = selIndex,
+                    onSelectIndex = { selectedVisibleIndex = it },
+                    canvasModifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.22f),
                 )
             }
         }
@@ -259,6 +288,40 @@ private fun SelectedMaRow(
                 maxLines = 1,
             )
         }
+    }
+}
+
+// ─── Selected-day KD strip (above KD pane) ───────────────────────────────────
+
+@Composable
+private fun SelectedKdRow(
+    settings: KdSettings,
+    kValue: Double?,
+    dValue: Double?,
+    modifier: Modifier = Modifier,
+) {
+    val params = settings.paramLabel()
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "K$params : ${kValue?.let { formatKd(it) } ?: "—"}",
+            color = KdColors.K,
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+        Text(
+            text = "D$params : ${dValue?.let { formatKd(it) } ?: "—"}",
+            color = KdColors.D,
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -721,23 +784,6 @@ private fun VolumeCanvas(
             )
         }
 
-        val labelEvery = maxOf(1, data.size / 6)
-        data.forEachIndexed { index, bar ->
-            if (index % labelEvery == 0 || index == data.lastIndex) {
-                val label = formatAxisDate(bar.date)
-                val measured = textMeasurer.measure(label, labelStyle)
-                val cx = slots.slotCenterX(index)
-                drawText(
-                    textLayoutResult = measured,
-                    topLeft = Offset(
-                        x = (cx - measured.size.width / 2f)
-                            .coerceIn(slots.chartLeft, slots.chartRight - measured.size.width),
-                        y = layout.volumeBottom + 4f,
-                    ),
-                )
-            }
-        }
-
         val selected = data.getOrNull(selectedIndex)
         if (selected != null) {
             val title = "成交量 ${selected.volume}"
@@ -753,6 +799,131 @@ private fun VolumeCanvas(
                         ((18f - measured.size.height) / 2f).coerceAtLeast(0f),
                 ),
             )
+        }
+    }
+}
+
+// ─── KD canvas ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun KdCanvas(
+    data: List<DailyOhlcv>,
+    kd: KdSeries,
+    selectedIndex: Int,
+    onSelectIndex: (Int) -> Unit,
+    canvasModifier: Modifier = Modifier,
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(
+        color = ChartColors.AxisText,
+        fontSize = 10.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+
+    Canvas(
+        modifier = canvasModifier
+            .fillMaxSize()
+            .pointerInput(data) {
+                detectTapGestures { offset ->
+                    val slots = SlotGeometry(size.width.toFloat(), data.size)
+                    slots.indexAtX(offset.x)?.let(onSelectIndex)
+                }
+            },
+    ) {
+        val layout = KdPaneLayout(
+            canvasWidth = size.width,
+            canvasHeight = size.height,
+            barCount = data.size,
+        )
+        val slots = layout.slots
+
+        // Horizontal grid + left labels (0–100 step 20)
+        for (tick in layout.ticks) {
+            val y = layout.valueToY(tick)
+            val isBand = tick == 20.0 || tick == 80.0
+            drawLine(
+                color = if (isBand) {
+                    ChartColors.HeaderText.copy(alpha = 0.28f)
+                } else {
+                    ChartColors.Grid
+                },
+                start = Offset(slots.chartLeft, y),
+                end = Offset(slots.chartRight, y),
+                strokeWidth = if (isBand) 1.25f else 1f,
+            )
+            val label = tick.toInt().toString()
+            val measured = textMeasurer.measure(label, labelStyle)
+            val labelY = (y - measured.size.height / 2f)
+                .coerceIn(layout.paneTop, layout.paneBottom - measured.size.height)
+            drawText(
+                textLayoutResult = measured,
+                topLeft = Offset(
+                    x = (slots.chartLeft - measured.size.width - 6f).coerceAtLeast(0f),
+                    y = labelY,
+                ),
+            )
+        }
+
+        fun drawKdLine(series: List<Double?>, color: Color) {
+            var prev: Offset? = null
+            series.forEachIndexed { index, value ->
+                if (value == null) {
+                    prev = null
+                    return@forEachIndexed
+                }
+                val pt = Offset(slots.slotCenterX(index), layout.valueToY(value))
+                val p = prev
+                if (p != null) {
+                    drawLine(
+                        color = color,
+                        start = p,
+                        end = pt,
+                        strokeWidth = 1.75f,
+                    )
+                }
+                prev = pt
+            }
+        }
+        drawKdLine(kd.k, KdColors.K)
+        drawKdLine(kd.d, KdColors.D)
+
+        // Crosshair: vertical @ day; horizontal @ K value
+        if (selectedIndex in data.indices) {
+            val cx = slots.slotCenterX(selectedIndex)
+            drawLine(
+                color = ChartColors.Crosshair,
+                start = Offset(cx, layout.plotTop),
+                end = Offset(cx, layout.plotBottom),
+                strokeWidth = 1f,
+            )
+            val kAtSel = kd.k.getOrNull(selectedIndex)
+            if (kAtSel != null) {
+                val ky = layout.valueToY(kAtSel)
+                drawLine(
+                    color = ChartColors.Crosshair,
+                    start = Offset(0f, ky),
+                    end = Offset(size.width, ky),
+                    strokeWidth = 1f,
+                )
+            }
+        }
+
+        // Date labels (moved from volume pane)
+        val labelEvery = maxOf(1, data.size / 6)
+        data.forEachIndexed { index, bar ->
+            if (index % labelEvery == 0 || index == data.lastIndex) {
+                val label = formatAxisDate(bar.date)
+                val measured = textMeasurer.measure(label, labelStyle)
+                val cx = slots.slotCenterX(index)
+                drawText(
+                    textLayoutResult = measured,
+                    topLeft = Offset(
+                        x = (cx - measured.size.width / 2f)
+                            .coerceIn(slots.chartLeft, slots.chartRight - measured.size.width),
+                        y = layout.paneBottom + 4f,
+                    ),
+                )
+            }
         }
     }
 }

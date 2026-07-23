@@ -21,6 +21,7 @@ import com.neojou.stockviewer.di.AppContainer
 import com.neojou.stockviewer.domain.repository.OhlcvRepository
 import com.neojou.stockviewer.presentation.chart.CandlestickChart
 import com.neojou.stockviewer.presentation.chart.ChartMaSettingsDialog
+import com.neojou.stockviewer.presentation.chart.KdSettings
 import com.neojou.stockviewer.presentation.chart.MovingAverageSettings
 import com.neojou.stockviewer.domain.export.OhlcvExportFormat
 import com.neojou.stockviewer.presentation.export.OhlcvExportFormatDialog
@@ -60,7 +61,7 @@ private enum class MainContent {
  *
  * Hosts a product-configured [MyTopMenuBar] and content area.
  * - Database → Input / View / Export / Import
- * - K Chart → View / Settings（均線天數）
+ * - K Chart → View / Settings（均線天數 + KD 參數）
  */
 @Composable
 fun StockViewer() {
@@ -71,6 +72,7 @@ fun StockViewer() {
     var importPreview by remember { mutableStateOf<OhlcvImportPreview?>(null) }
     var mainContent by remember { mutableStateOf(MainContent.Home) }
     var maSettings by remember { mutableStateOf(MovingAverageSettings.Default) }
+    var kdSettings by remember { mutableStateOf(KdSettings.Default) }
     var repository by remember { mutableStateOf<OhlcvRepository?>(null) }
     var repositoryError by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -240,6 +242,7 @@ fun StockViewer() {
                             repository = repo,
                             chartModifier = Modifier.fillMaxSize(),
                             maSettings = maSettings,
+                            kdSettings = kdSettings,
                         )
                     } else {
                         Box(
@@ -259,19 +262,23 @@ fun StockViewer() {
 
     if (showMaSettingsDialog) {
         ChartMaSettingsDialog(
-            current = maSettings,
+            currentMa = maSettings,
+            currentKd = kdSettings,
             onDismiss = { showMaSettingsDialog = false },
-            onConfirm = { next ->
-                maSettings = next
+            onConfirm = { nextMa, nextKd ->
+                maSettings = nextMa
+                kdSettings = nextKd
                 showMaSettingsDialog = false
                 MyLog.add(
                     TAG,
-                    "MA settings → ${next.period1}/${next.period2}/${next.period3}",
+                    "Chart settings → MA ${nextMa.period1}/${nextMa.period2}/${nextMa.period3} " +
+                        "KD ${nextKd.period},${nextKd.k},${nextKd.d}",
                     LogLevel.DEBUG,
                 )
                 scope.launch {
                     snackbarHostState.showSnackbar(
-                        "均線已更新：${next.period1} / ${next.period2} / ${next.period3} 日",
+                        "已更新：均線 ${nextMa.period1}/${nextMa.period2}/${nextMa.period3}，" +
+                            "KD(${nextKd.period},${nextKd.k},${nextKd.d})",
                     )
                 }
             },

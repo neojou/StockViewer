@@ -160,7 +160,7 @@ data class PricePaneLayout(
 }
 
 /**
- * Volume pane geometry (caption + bars + bottom date labels).
+ * Volume pane geometry (caption + bars). Date axis lives on [KdPaneLayout].
  */
 data class VolumePaneLayout(
     val canvasWidth: Float,
@@ -168,15 +168,15 @@ data class VolumePaneLayout(
     val barCount: Int,
     val volumeMax: Long,
 ) {
-    private val bottomDateHeight: Float = 24f
     private val volumeCaptionHeight: Float = 18f
     private val topEdge: Float = 2f
+    private val bottomPadding: Float = 4f
 
     val slots: SlotGeometry = SlotGeometry(canvasWidth, barCount)
 
     val volumeTop: Float = topEdge
     val volumeBottom: Float =
-        (canvasHeight - bottomDateHeight).coerceAtLeast(volumeTop + volumeCaptionHeight + 1f)
+        (canvasHeight - bottomPadding).coerceAtLeast(volumeTop + volumeCaptionHeight + 1f)
     val volumePlotTop: Float = volumeTop + volumeCaptionHeight
     val volumePlotBottom: Float = volumeBottom
     val volumePlotHeight: Float = (volumePlotBottom - volumePlotTop).coerceAtLeast(1f)
@@ -192,6 +192,37 @@ data class VolumePaneLayout(
     companion object {
         fun volumeMaxOf(data: List<DailyOhlcv>): Long =
             maxOf(data.maxOfOrNull { it.volume } ?: 0L, 1L)
+    }
+}
+
+/**
+ * KD indicator pane: fixed 0–100 scale, optional bottom date labels.
+ */
+data class KdPaneLayout(
+    val canvasWidth: Float,
+    val canvasHeight: Float,
+    val barCount: Int,
+) {
+    private val topPadding: Float = 4f
+    private val bottomDateHeight: Float = 24f
+    private val labelInset: Float = 10f
+
+    val slots: SlotGeometry = SlotGeometry(canvasWidth, barCount)
+
+    val plotTop: Float = topPadding + labelInset
+    val plotBottom: Float =
+        (canvasHeight - bottomDateHeight - labelInset).coerceAtLeast(plotTop + 1f)
+    val plotHeight: Float = (plotBottom - plotTop).coerceAtLeast(1f)
+    val paneTop: Float = topPadding
+    val paneBottom: Float = (canvasHeight - bottomDateHeight).coerceAtLeast(paneTop + 1f)
+
+    /** Fixed ticks: 0, 20, 40, 60, 80, 100. */
+    val ticks: List<Double> = listOf(0.0, 20.0, 40.0, 60.0, 80.0, 100.0)
+
+    fun valueToY(value: Double): Float {
+        val v = value.coerceIn(0.0, 100.0)
+        val ratio = (v / 100.0).toFloat()
+        return plotBottom - ratio * plotHeight
     }
 }
 

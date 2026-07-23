@@ -116,7 +116,7 @@ interface OhlcvRepository {
      └─ Import  → 開啟檔案 → 確認合併 → 寫入 DB
   K Chart
      ├─ View     → MainContent.KChart（主區替換）
-     └─ Settings → ChartMaSettingsDialog（三條均線天數）
+     └─ Settings → ChartMaSettingsDialog（均線天數 + KD 參數）
 ```
 
 殼層：`StockViewer`（Scaffold + 狀態）。頂部列使用通用 **`com.neojou.tools.ui.menu.MyTopMenuBar`**，由殼層組裝 `List<MyTopMenuItem>`（產品選單定義不在 tools 內）。詳見 ARCHITECTURE 導覽節。
@@ -185,7 +185,7 @@ UI 流程：
 
 ### 3. K Chart（✅）
 
-檔案：`CandlestickChart.kt` + `ChartLayout.kt` + `MovingAverage.kt` + `ChartMaSettingsDialog.kt`。
+檔案：`CandlestickChart.kt` + `ChartLayout.kt` + `MovingAverage.kt` + `KdIndicator.kt` + `ChartMaSettingsDialog.kt`。
 
 | 規則 | 值 |
 |------|-----|
@@ -196,17 +196,21 @@ UI 流程：
 | Zoom Out (`-`) | 增加可視根數，上限 **n**；左不足時向右伸展 |
 | Pan (`<` / `>`) | 視窗左／右移，步進 `max(1, visibleCount/5)`；邊界按鈕 disabled |
 | 控制列 | 價 plot 與量 plot **之間**：`<` `+` `-` `>` +「N日」標籤 |
-| K 線密度 | body ≈ **72%** slot（價與量共用寬度） |
+| K 線密度 | body ≈ **72%** slot（價／量／KD 共用 slot 幾何） |
 | 配色 | **紅漲綠跌**（`close >= open` → 紅） |
 | Header | 2×3 格線：日期/開/低；量/高/收；開↔高、低↔收對齊 |
 | **均線 (SMA)** | 三條，預設 **5 / 10 / 20** 日；用**收盤價**簡單平均；自可計算當日起畫 |
 | 均線顏色 | 槽位 1 **黃**、2 **紫**、3 **藍**（與天數設定無關） |
-| 均線設定 | **K Chart → Settings** → popup 改三個天數（1–250） |
 | 均價列 | Header 與價圖**之間**一行：`均價 N : xxx`（三色）；不足天數顯示 `—` |
+| **KD** | 成交量**下方**；RSV + 遞迴 K/D；預設 **(6,3,3)**；全序列計算後 slice |
+| KD 顏色 | **K 紅**、**D 綠** |
+| KD 刻度 | 左軸固定 **0,20,40,60,80,100** + 水平格線 |
+| KD 文案列 | KD 圖**上方**：`K(n,k,d) : xxx` 紅、`D(n,k,d) : xxx` 綠；不足則 `—` |
+| Settings | **K Chart → Settings**：均線三天數 + KD `(period,k,d)`（1–100） |
 | 刻度上界 | 第一個 **> max(high, visible MA)** 的 nice tick |
 | 刻度下界 | 第一個 **< min(low, visible MA)** 的 nice tick |
-| 版面 | 價格 Canvas + **NavBar** + 成交量 Canvas（slot 水平對齊） |
-| 十字線 | 垂直（價+量 slot）+ 水平（**收盤價**，價區拉滿寬） |
+| 版面 | 價 Canvas + NavBar + 量 Canvas + KD 文案 + KD Canvas（日期軸在 KD 底） |
+| 十字線 | 縱線貫穿價／量／KD 當日 slot；價區橫線＝**收盤**；KD 區橫線＝**K 值** |
 | 資料注入 | **現況** Chart 內部 `observeAll()`；**演進方向** List 注入（見 ARCHITECTURE G1，勿擅自大重構除非任務要求） |
 
 ---
